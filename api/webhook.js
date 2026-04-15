@@ -1,39 +1,56 @@
 import TelegramBot from "node-telegram-bot-api";
 import { getState, setState, resetState } from "../lib/state.js";
-import { generateResponseStream, shouldAdvancePhase } from "../lib/gemini.js";
+import { generateResponse, shouldAdvancePhase } from "../lib/gemini.js";
 import { getPhase } from "../lib/phases.js";
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 
-async function streamToTelegram(chatId, userMessage, state) {
-  let fullResponse = "";
-  // Gera um draftId único para esta sessão de streaming (deve ser um inteiro não-zero)
-  const draftId = Math.floor(Math.random() * 1000000) + 1;
+/**
+ * Envia mensagens em "burst" (múltiplas bolhas) para simular chat humano.
+ */
+async function burstToTelegram(chatId, userMessage, state) {
+  const fullRawResponse = await generateResponse(userMessage, state);
   
-  try {
-    for await (const chunk of generateResponseStream(userMessage, state)) {
-      fullResponse += chunk;
-      
-      // Atualizações progressivas via Draft (sem parse_mode)
-      await bot._request("sendMessageDraft", {
-        form: {
-          chat_id: chatId,
-          draft_id: draftId,
-          text: fullResponse + " 🦤"
-        }
-      }).catch((err) => console.error("Draft update error:", err.message));
-    }
-    
-    // Finalização: Converte o rascunho em mensagem definitiva
-    await bot.sendMessage(chatId, fullResponse, { parse_mode: "Markdown" });
+  // Divide por [BOLHA]
+  const bubbles = fullRawResponse
+    .split(/\[BOLHA\]/i)
+    .map(b => b.trim())
+    .filter(b => b.length > 0);
 
-    return fullResponse;
-  } catch (error) {
-    console.error("Stream error detail:", error);
-    const fallback = fullResponse || "Minhas penas... a gravidade venceu desta vez.";
-    await bot.sendMessage(chatId, fallback, { parse_mode: "Markdown" });
-    return fallback;
+  let lastMsgId = state.lastMessageId;
+
+  for (let i = 0; i < bubbles.length; i++) {
+    let text = bubbles[i];
+
+    // Reações nativas: [REAÇÃO:emoji]
+    const reactionMatch = text.match(/\[REAÇÃO:(.+?)\]/i);
+    if (reactionMatch) {
+      const emoji = reactionMatch[1].trim();
+      text = text.replace(/\[REAÇÃO:.+?\]/i, "").trim();
+      if (lastMsgId) {
+        await bot._request("setMessageReaction", {
+          form: { 
+            chat_id: chatId, 
+            message_id: lastMsgId, 
+            reaction: [{ type: "emoji", emoji: emoji }] 
+          }
+        }).catch(() => {});
+      }
+    }
+
+    if (text.length === 0) continue;
+
+    // Tempo de digitação proporcional
+    await bot.sendChatAction(chatId, "typing");
+    const typingDelay = Math.min(Math.max(text.length * 35, 1000), 3000);
+    await new Promise(r => setTimeout(r, typingDelay));
+
+    const sent = await bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
+    lastMsgId = sent.message_id;
   }
+
+  // Retorna texto limpo para o histórico
+  return bubbles.map(b => b.replace(/\[REAÇÃO:.+?\]/i, "").trim()).join(" ");
 }
 
 export default async function handler(req, res) {
@@ -41,26 +58,16 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, message: "Webhook ativo 🦤" });
   }
 
-  // Determina a URL base dinamicamente
   let BASE_URL = process.env.APP_URL;
   if (!BASE_URL) {
     const host = req.headers.host;
-    if (host) {
-      BASE_URL = `https://${host}`;
-    } else {
-      BASE_URL = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "";
-    }
+    BASE_URL = host ? `https://${host}` : (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");
   }
-
-  // Remove barra final se houver
-  if (BASE_URL.endsWith("/")) {
-    BASE_URL = BASE_URL.slice(0, -1);
-  }
+  if (BASE_URL.endsWith("/")) BASE_URL = BASE_URL.slice(0, -1);
 
   try {
     const update = req.body;
 
-    // Comando /start — inicia ou reinicia a jornada
     if (update.message?.text === "/start") {
       const chatId = update.message.chat.id;
       const userId = update.message.from.id;
@@ -68,142 +75,76 @@ export default async function handler(req, res) {
 
       await resetState(userId);
 
-      const welcomeMessage = `
-🦤 *Dostoiévski olha para você com um ar de superioridade inexplicável para um pássaro que não voa.*
+      const welcomeMessage = `*Dostoiévski olha para você com um ar de superioridade.* 🦤\n\nAh. Finalmente. Eu já esperava. A gravidade me jogou aqui, e eu fui designado para guiá-la.\n\n5 fases. 5 desafios à altura da minha inteligência — e talvez da sua. Veremos.\n\nHá um lugar em SP onde tudo começou. Aromas de um país distante. Dois mundos se encontrando pela primeira vez.\n\nVocê se lembra?`;
 
-Ah. Finalmente chegou. Eu já esperava. Bem... não *eu* esperava, foi a gravidade que me jogou aqui neste chat. Mas já que estamos aqui...
-
-Meu nome é *Dostoiévski*. Sou um Dodo. Não qualquer Dodo — O Dodo. E fui designado — contra minha vontade, diga-se — para guiá-la em uma jornada hoje.
-
-São 5 fases. Cada uma tem um desafio à altura de sua inteligência. Ou pelo menos, à altura do que eu imagino ser sua inteligência. Veremos.
-
-Vamos começar pelo começo. E o começo, como dizia Tolstói... ou era Tchekhov?... bem, alguém disse algo sobre começos.
-
-*Primeira questão, ${firstName}:*
-Há um lugar em São Paulo onde tudo começou. Um lugar com aromas de um país distante, onde dois mundos se encontraram pela primeira vez.
-
-Você se lembra? 🦤
-      `;
-
-      // Define estado inicial: Fase 1, subestado Puzzle
       await setState(userId, {
         phase: 1,
         substate: "puzzle",
         history: [{ role: "assistant", content: welcomeMessage }],
       });
 
-      // Envia mensagem de boas vindas com o botão do primeiro puzzle
       await bot.sendMessage(chatId, welcomeMessage, {
         parse_mode: "Markdown",
         reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: "🟠 Abrir Puzzle: A Origem",
-                web_app: { url: `${BASE_URL}/app/?phase=1` },
-              },
-            ],
-          ],
+          inline_keyboard: [[{ text: "🟠 Abrir Puzzle: A Origem", web_app: { url: `${BASE_URL}/app/?phase=1` } }]],
         },
       });
 
       return res.status(200).json({ ok: true });
     }
 
-    // Mensagens de texto normais
     if (update.message?.text) {
       const chatId = update.message.chat.id;
       const userId = update.message.from.id;
       const userMessage = update.message.text;
 
-      // Carrega estado atual
       const state = await getState(userId);
 
-      // Indica que está "digitando"
-      bot.sendChatAction(chatId, "typing");
+      // Resposta em Bursts
+      const aiResponse = await burstToTelegram(chatId, userMessage, state);
 
-      // Gera resposta do Dostoiévski com STREAM
-      const aiResponse = await streamToTelegram(chatId, userMessage, state);
+      const shouldAdvance = await shouldAdvancePhase(userMessage, aiResponse, state);
 
-      // Verifica se deve avançar para o PRÓXIMO puzzle (só se estiver em substate 'chat')
-      const shouldAdvanceToNextPuzzle = await shouldAdvancePhase(
-        userMessage,
-        aiResponse,
-        state
-      );
-
-      // Atualiza histórico (mantendo curto)
       const newHistory = [
         ...state.history,
         { role: "user", content: userMessage },
         { role: "assistant", content: aiResponse },
-      ].slice(-10);
+      ].slice(-8);
 
       let newPhase = state.phase;
       let newSubstate = state.substate;
 
-      // Se o Gemini decidir que o papo acabou, vamos para o próximo puzzle
-      if (shouldAdvanceToNextPuzzle && state.phase < 5) {
+      if (shouldAdvance && state.phase < 5) {
         newPhase = state.phase + 1;
         newSubstate = "puzzle";
-        
         const nextPhase = getPhase(newPhase);
 
-        // Mensagem de transição dramática
-        const transitionMsg = `
-━━━━━━━━━━━━━━━━━━━━━━
-🦤 *PRÓXIMO DESAFIO: FASE ${newPhase} — "${nextPhase.name}"*
-━━━━━━━━━━━━━━━━━━━━━━
-        `;
-        
+        const transitionMsg = `*— FASE ${newPhase}: ${nextPhase.name.toUpperCase()} —*`;
+        await new Promise(r => setTimeout(r, 1500));
         await bot.sendMessage(chatId, transitionMsg, { parse_mode: "Markdown" });
 
-        // Envia o botão para o novo puzzle
-        const buttonUrl = newPhase === 5 
-          ? `${BASE_URL}/revelation/` 
-          : `${BASE_URL}/app/?phase=${newPhase}`;
-        
-        const buttonText = newPhase === 5
-          ? "🌈 Abrir Revelação Final"
-          : `✨ Abrir Puzzle: ${nextPhase.name}`;
+        const buttonUrl = newPhase === 5 ? `${BASE_URL}/revelation/` : `${BASE_URL}/app/?phase=${newPhase}`;
+        const buttonText = newPhase === 5 ? "🌈 Abrir Revelação Final" : `✨ Abrir Puzzle: ${nextPhase.name}`;
 
-        await bot.sendMessage(chatId, "Quando estiver pronta, abra o desafio:", {
+        await bot.sendMessage(chatId, "O próximo passo aguarda:", {
           reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: buttonText,
-                  web_app: { url: buttonUrl },
-                },
-              ],
-            ],
+            inline_keyboard: [[{ text: buttonText, web_app: { url: buttonUrl } }]],
           },
         });
-
-      } else {
-        // Se o usuário estiver no substate puzzle e mandou msg, podemos reforçar o botão caso ele tenha perdido
-        if (state.substate === "puzzle") {
-          const currentPhase = getPhase(state.phase);
-          await bot.sendMessage(chatId, "Ainda está travada? Use o Mini App:", {
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  {
-                    text: `🟠 Abrir Puzzle: ${currentPhase.name}`,
-                    web_app: { url: `${BASE_URL}/app/?phase=${state.phase}` },
-                  },
-                ],
-              ],
-            },
-          });
-        }
+      } else if (state.substate === "puzzle") {
+        const currentPhase = getPhase(state.phase);
+        await bot.sendMessage(chatId, "Ainda travada? Use o Mini App:", {
+          reply_markup: {
+            inline_keyboard: [[{ text: `🟠 Abrir Puzzle: ${currentPhase.name}`, web_app: { url: `${BASE_URL}/app/?phase=${state.phase}` } }]],
+          },
+        });
       }
 
-      // Salva novo estado
       await setState(userId, { 
         phase: newPhase, 
         substate: newSubstate, 
-        history: newHistory 
+        history: newHistory,
+        lastMessageId: state.lastMessageId // Mantido pela burstToTelegram
       });
     }
 
