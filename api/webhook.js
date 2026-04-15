@@ -1,9 +1,51 @@
 import TelegramBot from "node-telegram-bot-api";
 import { getState, setState, resetState } from "../lib/state.js";
-import { generateResponse, shouldAdvancePhase } from "../lib/gemini.js";
+import { generateResponseStream, shouldAdvancePhase } from "../lib/gemini.js";
 import { getPhase } from "../lib/phases.js";
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
+
+async function streamToTelegram(chatId, userMessage, state) {
+  let fullResponse = "";
+  
+  try {
+    // Inicia o streaming nativo via Draft (Feature da API 9.5+)
+    let draft = await bot._request("sendMessageDraft", {
+      chat_id: chatId,
+      text: "🦤 ...",
+      parse_mode: "Markdown"
+    });
+    
+    const draftId = draft.draft_id;
+
+    for await (const chunk of generateResponseStream(userMessage, state)) {
+      fullResponse += chunk;
+      
+      // O sendMessageDraft permite atualizações de alta frequência
+      await bot._request("editMessageDraft", {
+        chat_id: chatId,
+        draft_id: draftId,
+        text: fullResponse + " 🦤",
+        parse_mode: "Markdown"
+      }).catch(() => {});
+    }
+    
+    // Converte o rascunho em mensagem final
+    await bot._request("finalizeMessageDraft", {
+      chat_id: chatId,
+      draft_id: draftId,
+      text: fullResponse,
+      parse_mode: "Markdown"
+    }).catch(() => {});
+
+    return fullResponse;
+  } catch (error) {
+    console.error("Stream error:", error);
+    const fallback = fullResponse || "Minhas penas... a gravidade venceu desta vez.";
+    await bot.sendMessage(chatId, fallback, { parse_mode: "Markdown" });
+    return fallback;
+  }
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -88,8 +130,11 @@ Você se lembra? 🦤
       // Carrega estado atual
       const state = await getState(userId);
 
-      // Gera resposta do Dostoiévski
-      const aiResponse = await generateResponse(userMessage, state);
+      // Indica que está "digitando"
+      bot.sendChatAction(chatId, "typing");
+
+      // Gera resposta do Dostoiévski com STREAM
+      const aiResponse = await streamToTelegram(chatId, userMessage, state);
 
       // Verifica se deve avançar para o PRÓXIMO puzzle (só se estiver em substate 'chat')
       const shouldAdvanceToNextPuzzle = await shouldAdvancePhase(
@@ -98,12 +143,12 @@ Você se lembra? 🦤
         state
       );
 
-      // Atualiza histórico
+      // Atualiza histórico (mantendo curto)
       const newHistory = [
         ...state.history,
         { role: "user", content: userMessage },
         { role: "assistant", content: aiResponse },
-      ].slice(-20);
+      ].slice(-10);
 
       let newPhase = state.phase;
       let newSubstate = state.substate;
@@ -122,7 +167,6 @@ Você se lembra? 🦤
 ━━━━━━━━━━━━━━━━━━━━━━
         `;
         
-        await bot.sendMessage(chatId, aiResponse, { parse_mode: "Markdown" });
         await bot.sendMessage(chatId, transitionMsg, { parse_mode: "Markdown" });
 
         // Envia o botão para o novo puzzle
@@ -148,10 +192,6 @@ Você se lembra? 🦤
         });
 
       } else {
-        // Apenas responde normalmente
-        // Se estiver em modo puzzle, o Gemini deve ter dado uma dica
-        await bot.sendMessage(chatId, aiResponse, { parse_mode: "Markdown" });
-
         // Se o usuário estiver no substate puzzle e mandou msg, podemos reforçar o botão caso ele tenha perdido
         if (state.substate === "puzzle") {
           const currentPhase = getPhase(state.phase);
