@@ -7,44 +7,25 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 
 async function streamToTelegram(chatId, userMessage, state) {
   let fullResponse = "";
+  // Gera um draftId único para esta sessão de streaming (deve ser um inteiro não-zero)
+  const draftId = Math.floor(Math.random() * 1000000) + 1;
   
   try {
-    // Inicia o streaming nativo via Draft (Feature da API 9.5+)
-    const response = await bot._request("sendMessageDraft", {
-      form: {
-        chat_id: chatId,
-        text: "🦤 ...",
-        // Sem parse_mode no início para evitar erros de tags abertas
-      }
-    });
-    
-    // node-telegram-bot-api's _request resolve para o body completo {ok: true, result: {...}}
-    const draftId = response.result?.draft_id || response.draft_id;
-
-    if (!draftId) throw new Error("Falha ao obter draft_id");
-
     for await (const chunk of generateResponseStream(userMessage, state)) {
       fullResponse += chunk;
       
-      // Atualizações de alta frequência sem parse_mode para não quebrar com Markdown incompleto
-      await bot._request("editMessageDraft", {
+      // Atualizações progressivas via Draft (sem parse_mode)
+      await bot._request("sendMessageDraft", {
         form: {
           chat_id: chatId,
           draft_id: draftId,
           text: fullResponse + " 🦤"
         }
-      }).catch((err) => console.error("Edit draft error:", err.message));
+      }).catch((err) => console.error("Draft update error:", err.message));
     }
     
-    // Finalização: Aqui aplicamos o parse_mode: "Markdown" pois o texto está completo
-    await bot._request("finalizeMessageDraft", {
-      form: {
-        chat_id: chatId,
-        draft_id: draftId,
-        text: fullResponse,
-        parse_mode: "Markdown"
-      }
-    });
+    // Finalização: Converte o rascunho em mensagem definitiva
+    await bot.sendMessage(chatId, fullResponse, { parse_mode: "Markdown" });
 
     return fullResponse;
   } catch (error) {
