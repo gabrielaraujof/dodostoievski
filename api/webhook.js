@@ -5,14 +5,25 @@ import { getPhase } from "../lib/phases.js";
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 
-// URL base do seu projeto na Vercel
-const BASE_URL = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : process.env.APP_URL;
-
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(200).json({ ok: true, message: "Webhook ativo 🦤" });
+  }
+
+  // Determina a URL base dinamicamente
+  let BASE_URL = process.env.APP_URL;
+  if (!BASE_URL) {
+    const host = req.headers.host;
+    if (host) {
+      BASE_URL = `https://${host}`;
+    } else {
+      BASE_URL = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "";
+    }
+  }
+
+  // Remove barra final se houver
+  if (BASE_URL.endsWith("/")) {
+    BASE_URL = BASE_URL.slice(0, -1);
   }
 
   try {
