@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>✨ Revelação</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=Inter:wght@300;400&display=swap" rel="stylesheet">
@@ -32,7 +33,6 @@
       overflow-x: hidden;
     }
 
-    /* ── Canvas de partículas ── */
     #canvas {
       position: fixed;
       inset: 0;
@@ -40,7 +40,6 @@
       z-index: 0;
     }
 
-    /* ── Layout principal ── */
     .page {
       position: relative;
       z-index: 1;
@@ -54,7 +53,6 @@
       gap: 2rem;
     }
 
-    /* ── Gradiente de fundo animado ── */
     .bg-gradient {
       position: fixed;
       inset: 0;
@@ -71,7 +69,6 @@
       100% { filter: hue-rotate(30deg); }
     }
 
-    /* ── Dodo emoji hero ── */
     .dodo {
       font-size: clamp(3rem, 10vw, 5rem);
       animation: float 4s ease-in-out infinite;
@@ -83,7 +80,6 @@
       50%       { transform: translateY(-12px) rotate(3deg); }
     }
 
-    /* ── Título ── */
     .title {
       font-family: 'Cormorant Garamond', Georgia, serif;
       font-size: clamp(2.2rem, 8vw, 4.5rem);
@@ -105,7 +101,6 @@
       100% { background-position: 0% 50%; }
     }
 
-    /* ── Verso russo ── */
     .verse {
       font-family: 'Cormorant Garamond', Georgia, serif;
       font-size: clamp(1.3rem, 4vw, 2rem);
@@ -128,7 +123,6 @@
       animation: fadeUp 1s ease 1.4s forwards;
     }
 
-    /* ── Cards de idiomas ── */
     .languages {
       display: flex;
       flex-wrap: wrap;
@@ -150,7 +144,6 @@
       backdrop-filter: blur(8px);
     }
 
-    /* ── Mensagem central ── */
     .message-card {
       max-width: 480px;
       width: 100%;
@@ -170,16 +163,10 @@
       text-align: left;
     }
 
-    .message-card p + p {
-      margin-top: 1rem;
-    }
+    .message-card p + p { margin-top: 1rem; }
 
-    .highlight {
-      color: var(--text);
-      font-style: italic;
-    }
+    .highlight { color: var(--text); font-style: italic; }
 
-    /* ── Assinatura do Dostoiévski ── */
     .signature {
       font-family: 'Cormorant Garamond', Georgia, serif;
       font-size: 1rem;
@@ -189,23 +176,9 @@
       text-align: right;
     }
 
-    /* ── Confetti trigger ── */
-    .confetti-btn {
-      display: none;
-    }
-
-    /* ── Animação base ── */
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(20px); }
       to   { opacity: 1; transform: translateY(0); }
-    }
-
-    /* ── Stars/partículas ── */
-    .stars {
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      pointer-events: none;
     }
   </style>
 </head>
@@ -215,16 +188,12 @@
 <canvas id="canvas"></canvas>
 
 <main class="page">
-
   <div class="dodo">🦤</div>
-
   <h1 class="title">Feliz Aniversário</h1>
-
   <div>
     <p class="verse">я люблю тебя до слёз</p>
     <p class="verse-translation">eu te amo até as lágrimas</p>
   </div>
-
   <div class="languages">
     <span class="lang-chip">🇷🇺 Русский</span>
     <span class="lang-chip">🇧🇷 Português</span>
@@ -233,7 +202,6 @@
     <span class="lang-chip">🇬🇧 English</span>
     <span class="lang-chip">🇨🇳 中文</span>
   </div>
-
   <div class="message-card">
     <p>
       Досtoiévski não acredita em sentimentos. Sentimentos são <span class="highlight">ineficientes</span>.
@@ -250,74 +218,20 @@
     </p>
     <p class="signature">— Dostoiévski 🦤<br><small style="font-size:0.8em; font-style:normal; color: oklch(0.45 0.05 80)">O único Dodo que leu Tolstói. E não gostou.</small></p>
   </div>
-
 </main>
 
 <script>
-  // ── Partículas coloridas ──────────────────────────────────────
   const canvas = document.getElementById('canvas');
   const ctx = canvas.getContext('2d');
   let W, H, particles = [];
-
-  const COLORS = [
-    'oklch(0.65 0.28 25)',
-    'oklch(0.70 0.22 55)',
-    'oklch(0.72 0.20 145)',
-    'oklch(0.65 0.25 260)',
-    'oklch(0.68 0.26 310)',
-    'oklch(0.75 0.18 200)',
-  ];
-
-  function resize() {
-    W = canvas.width = window.innerWidth;
-    H = canvas.height = window.innerHeight;
-  }
-
-  function createParticle() {
-    return {
-      x: Math.random() * W,
-      y: Math.random() * H,
-      r: Math.random() * 1.5 + 0.5,
-      color: COLORS[Math.floor(Math.random() * COLORS.length)],
-      vx: (Math.random() - 0.5) * 0.3,
-      vy: (Math.random() - 0.5) * 0.3,
-      alpha: Math.random() * 0.5 + 0.1,
-      pulse: Math.random() * Math.PI * 2,
-    };
-  }
-
-  function init() {
-    resize();
-    particles = Array.from({ length: 120 }, createParticle);
-  }
-
-  function draw() {
-    ctx.clearRect(0, 0, W, H);
-    particles.forEach(p => {
-      p.pulse += 0.02;
-      p.x += p.vx;
-      p.y += p.vy;
-      if (p.x < 0) p.x = W;
-      if (p.x > W) p.x = 0;
-      if (p.y < 0) p.y = H;
-      if (p.y > H) p.y = 0;
-
-      const a = p.alpha * (0.6 + 0.4 * Math.sin(p.pulse));
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fillStyle = p.color;
-      ctx.globalAlpha = a;
-      ctx.fill();
-    });
-    ctx.globalAlpha = 1;
-    requestAnimationFrame(draw);
-  }
-
+  const COLORS = ['oklch(0.65 0.28 25)', 'oklch(0.70 0.22 55)', 'oklch(0.72 0.20 145)', 'oklch(0.65 0.25 260)', 'oklch(0.68 0.26 310)', 'oklch(0.75 0.18 200)'];
+  function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
+  function createParticle() { return { x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5 + 0.5, color: COLORS[Math.floor(Math.random() * COLORS.length)], vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3, alpha: Math.random() * 0.5 + 0.1, pulse: Math.random() * Math.PI * 2 }; }
+  function init() { resize(); particles = Array.from({ length: 120 }, createParticle); }
+  function draw() { ctx.clearRect(0, 0, W, H); particles.forEach(p => { p.pulse += 0.02; p.x += p.vx; p.y += p.vy; if (p.x < 0) p.x = W; if (p.x > W) p.x = 0; if (p.y < 0) p.y = H; if (p.y > H) p.y = 0; const a = p.alpha * (0.6 + 0.4 * Math.sin(p.pulse)); ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fillStyle = p.color; ctx.globalAlpha = a; ctx.fill(); }); ctx.globalAlpha = 1; requestAnimationFrame(draw); }
   window.addEventListener('resize', resize);
-  init();
-  draw();
+  init(); draw();
 
-  // ── Confetti ao chegar na página ─────────────────────────────
   function launchConfetti() {
     const count = 80;
     const colors = ['#ff6b6b','#ffd93d','#6bcb77','#4d96ff','#c77dff','#ff9f1c'];
@@ -325,16 +239,7 @@
       setTimeout(() => {
         const el = document.createElement('div');
         const size = Math.random() * 8 + 5;
-        el.style.cssText = `
-          position:fixed; top:-10px;
-          left:${Math.random()*100}vw;
-          width:${size}px; height:${size}px;
-          background:${colors[Math.floor(Math.random()*colors.length)]};
-          border-radius:${Math.random() > 0.5 ? '50%' : '2px'};
-          pointer-events:none; z-index:9999;
-          animation: fall ${2+Math.random()*2}s ease-in forwards;
-          transform: rotate(${Math.random()*360}deg);
-        `;
+        el.style.cssText = `position:fixed; top:-10px; left:${Math.random()*100}vw; width:${size}px; height:${size}px; background:${colors[Math.floor(Math.random()*colors.length)]}; border-radius:${Math.random() > 0.5 ? '50%' : '2px'}; pointer-events:none; z-index:9999; animation: fall ${2+Math.random()*2}s ease-in forwards; transform: rotate(${Math.random()*360}deg);`;
         document.body.appendChild(el);
         setTimeout(() => el.remove(), 4000);
       }, i * 30);
@@ -342,18 +247,22 @@
   }
 
   const style = document.createElement('style');
-  style.textContent = `
-    @keyframes fall {
-      to { transform: translateY(105vh) rotate(${Math.random()*720}deg); opacity:0; }
-    }
-  `;
+  style.textContent = `@keyframes fall { to { transform: translateY(105vh) rotate(${Math.random()*720}deg); opacity:0; } }`;
   document.head.appendChild(style);
 
-  // Dispara confetti após as animações de entrada
   setTimeout(launchConfetti, 2800);
-  // Segunda rodada de confetti
   setTimeout(launchConfetti, 5000);
-</script>
 
+  async function notifyBot() {
+    const tg = window.Telegram.WebApp;
+    if (!tg.initData) return;
+    await fetch('/api/advance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initData: tg.initData, phase: 5 })
+    });
+  }
+  notifyBot();
+</script>
 </body>
 </html>
