@@ -68,15 +68,47 @@ export default async function handler(req, res) {
 
     // 5. Gerar uma mensagem de sucesso do Dostoiévski
     const successPrompt = `O usuário acabou de resolver o puzzle da fase ${phase}. Dê as boas vindas ao modo conversa e comente sobre o feito.`;
-    const aiResponse = await generateResponse(successPrompt, newState);
+    const fullRawResponse = await generateResponse(successPrompt, newState);
 
-    // Adiciona resposta ao histórico
-    newState.history.push({ role: "assistant", content: aiResponse });
+    // Mesma lógica de burst do webhook para manter consistência
+    const bubbles = fullRawResponse
+      .split(/[\s\[\*]*BOLHA[\s\]\*]*/i)
+      .map(b => b.trim())
+      .filter(b => b.length > 0);
+
+    let lastMsgId = state.lastMessageId;
+
+    for (let i = 0; i < bubbles.length; i++) {
+      let text = bubbles[i];
+
+      const reactionMatch = text.match(/REAÇÃO:\s*([^\]\.\*]+)/i);
+      if (reactionMatch) {
+        const emoji = reactionMatch[1].trim();
+        text = text.replace(/[\s\[\*]*REAÇÃO:.+$/i, "").trim();
+        if (lastMsgId) {
+          await bot._request("setMessageReaction", {
+            form: { chat_id: userId, message_id: lastMsgId, reaction: [{ type: "emoji", emoji: emoji }] }
+          }).catch(() => {});
+        }
+      }
+
+      if (text.length === 0) continue;
+
+      await bot.sendChatAction(userId, "typing");
+      const typingDelay = Math.min(Math.max(text.length * 35, 1000), 3000);
+      await new Promise(r => setTimeout(r, typingDelay));
+
+      const sent = await bot.sendMessage(userId, text, { parse_mode: "Markdown" });
+      lastMsgId = sent.message_id;
+    }
+
+    const cleanResponse = bubbles.map(b => b.replace(/[\s\[\*]*REAÇÃO:.+$/i, "").trim()).join(" ");
+
+    // Adiciona resposta limpa ao histórico
+    newState.history.push({ role: "assistant", content: cleanResponse });
+    newState.lastMessageId = lastMsgId;
 
     await setState(userId, newState);
-
-    // 6. Enviar mensagem via Bot para o chat do Telegram
-    await bot.sendMessage(userId, aiResponse, { parse_mode: "Markdown" });
 
     return res.status(200).json({ ok: true });
   } catch (error) {
