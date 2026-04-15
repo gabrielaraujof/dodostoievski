@@ -8,7 +8,7 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 /**
  * Envia mensagens em "burst" (múltiplas bolhas) para simular chat humano.
  */
-async function burstToTelegram(chatId, userMessage, state) {
+async function burstToTelegram(chatId, userMessage, state, userMsgId) {
   const fullRawResponse = await generateResponse(userMessage, state);
   
   // Divide por BOLHA ignorando espaços, asteriscos e colchetes ao redor
@@ -23,16 +23,17 @@ async function burstToTelegram(chatId, userMessage, state) {
     let text = bubbles[i];
 
     // Reações: Aceita [REAÇÃO:emoji], REAÇÃO: emoji, **REAÇÃO: emoji**
-    // Para na primeira pontuação ou fim de linha
     const reactionMatch = text.match(/REAÇÃO:\s*([^\]\.\*]+)/i);
     if (reactionMatch) {
       const emoji = reactionMatch[1].trim();
       text = text.replace(/[\s\[\*]*REAÇÃO:.+$/i, "").trim();
-      if (lastMsgId) {
+      
+      // CORREÇÃO: Reage à mensagem do usuário
+      if (userMsgId) {
         await bot._request("setMessageReaction", {
           form: { 
             chat_id: chatId, 
-            message_id: lastMsgId, 
+            message_id: userMsgId, 
             reaction: [{ type: "emoji", emoji: emoji }] 
           }
         }).catch(() => {});
@@ -50,8 +51,26 @@ async function burstToTelegram(chatId, userMessage, state) {
     lastMsgId = sent.message_id;
   }
 
+  // GUARDRAIL: Se a última bolha não for pergunta/comando, injeta fallback provocativo
+  const lastBubble = bubbles[bubbles.length - 1] || "";
+  if (!/[?!\n]$/.test(lastBubble)) {
+    const fallbacks = [
+      "Vai ficar me olhando com essa cara de mamífero confuso ou vai responder?",
+      "O silêncio dos primatas é ensurdecedor. Prossiga.",
+      "Perdeu a língua? Eu não tenho o dia todo.",
+      "Minha paciência é menor que minhas asas. Responda."
+    ];
+    const extra = fallbacks[Math.floor(Math.random() * fallbacks.length)];
+    await new Promise(r => setTimeout(r, 1000));
+    await bot.sendChatAction(chatId, "typing");
+    await new Promise(r => setTimeout(r, 800));
+    const sentExtra = await bot.sendMessage(chatId, extra, { parse_mode: "Markdown" });
+    lastMsgId = sentExtra.message_id;
+  }
+
+  state.lastMessageId = lastMsgId;
   // Retorna texto limpo para o histórico
-  return bubbles.map(b => b.replace(/\[REAÇÃO:.+?\]/i, "").trim()).join(" ");
+  return bubbles.map(b => b.replace(/[\s\[\*]*REAÇÃO:.+$/i, "").trim()).join(" ");
 }
 
 export default async function handler(req, res) {
@@ -97,12 +116,13 @@ export default async function handler(req, res) {
     if (update.message?.text) {
       const chatId = update.message.chat.id;
       const userId = update.message.from.id;
+      const userMessageId = update.message.message_id;
       const userMessage = update.message.text;
 
       const state = await getState(userId);
 
-      // Resposta em Bursts
-      const aiResponse = await burstToTelegram(chatId, userMessage, state);
+      // Resposta em Bursts - Passando ID da msg do usuário para reações
+      const aiResponse = await burstToTelegram(chatId, userMessage, state, userMessageId);
 
       const shouldAdvance = await shouldAdvancePhase(userMessage, aiResponse, state);
 
@@ -145,7 +165,7 @@ export default async function handler(req, res) {
         phase: newPhase, 
         substate: newSubstate, 
         history: newHistory,
-        lastMessageId: state.lastMessageId // Mantido pela burstToTelegram
+        lastMessageId: state.lastMessageId
       });
     }
 
