@@ -11,9 +11,9 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 async function burstToTelegram(chatId, userMessage, state) {
   const fullRawResponse = await generateResponse(userMessage, state);
   
-  // Divide por [BOLHA]
+  // Divide por [BOLHA] ou apenas BOLHA no início de linhas/frases
   const bubbles = fullRawResponse
-    .split(/\[BOLHA\]/i)
+    .split(/\[?BOLHA\]?/i)
     .map(b => b.trim())
     .filter(b => b.length > 0);
 
@@ -22,11 +22,11 @@ async function burstToTelegram(chatId, userMessage, state) {
   for (let i = 0; i < bubbles.length; i++) {
     let text = bubbles[i];
 
-    // Reações nativas: [REAÇÃO:emoji]
-    const reactionMatch = text.match(/\[REAÇÃO:(.+?)\]/i);
+    // Reações nativas: [REAÇÃO:emoji] ou REAÇÃO:emoji
+    const reactionMatch = text.match(/\[?REAÇÃO:(.+?)\]?/i);
     if (reactionMatch) {
       const emoji = reactionMatch[1].trim();
-      text = text.replace(/\[REAÇÃO:.+?\]/i, "").trim();
+      text = text.replace(/\[?REAÇÃO:.+?\]?/i, "").trim();
       if (lastMsgId) {
         await bot._request("setMessageReaction", {
           form: { 
