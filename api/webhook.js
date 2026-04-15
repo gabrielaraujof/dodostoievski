@@ -10,37 +10,45 @@ async function streamToTelegram(chatId, userMessage, state) {
   
   try {
     // Inicia o streaming nativo via Draft (Feature da API 9.5+)
-    let draft = await bot._request("sendMessageDraft", {
-      chat_id: chatId,
-      text: "🦤 ...",
-      parse_mode: "Markdown"
+    const response = await bot._request("sendMessageDraft", {
+      form: {
+        chat_id: chatId,
+        text: "🦤 ...",
+        // Sem parse_mode no início para evitar erros de tags abertas
+      }
     });
     
-    const draftId = draft.draft_id;
+    // node-telegram-bot-api's _request resolve para o body completo {ok: true, result: {...}}
+    const draftId = response.result?.draft_id || response.draft_id;
+
+    if (!draftId) throw new Error("Falha ao obter draft_id");
 
     for await (const chunk of generateResponseStream(userMessage, state)) {
       fullResponse += chunk;
       
-      // O sendMessageDraft permite atualizações de alta frequência
+      // Atualizações de alta frequência sem parse_mode para não quebrar com Markdown incompleto
       await bot._request("editMessageDraft", {
-        chat_id: chatId,
-        draft_id: draftId,
-        text: fullResponse + " 🦤",
-        parse_mode: "Markdown"
-      }).catch(() => {});
+        form: {
+          chat_id: chatId,
+          draft_id: draftId,
+          text: fullResponse + " 🦤"
+        }
+      }).catch((err) => console.error("Edit draft error:", err.message));
     }
     
-    // Converte o rascunho em mensagem final
+    // Finalização: Aqui aplicamos o parse_mode: "Markdown" pois o texto está completo
     await bot._request("finalizeMessageDraft", {
-      chat_id: chatId,
-      draft_id: draftId,
-      text: fullResponse,
-      parse_mode: "Markdown"
-    }).catch(() => {});
+      form: {
+        chat_id: chatId,
+        draft_id: draftId,
+        text: fullResponse,
+        parse_mode: "Markdown"
+      }
+    });
 
     return fullResponse;
   } catch (error) {
-    console.error("Stream error:", error);
+    console.error("Stream error detail:", error);
     const fallback = fullResponse || "Minhas penas... a gravidade venceu desta vez.";
     await bot.sendMessage(chatId, fallback, { parse_mode: "Markdown" });
     return fallback;
