@@ -112,8 +112,13 @@ export default async function handler(req, res) {
 
     const cleanResponse = bubbles.map(b => b.replace(/[\s\[\*]*REAÇÃO:.+$/i, "").trim()).join(" ");
 
-    // Atualiza histórico e ID da última mensagem no final
+    // Atualiza histórico: registra a ação do usuário (vitória) e a resposta do bot
+    newState.history.push({ role: "user", content: `[SINAL: O usuário resolveu o enigma da fase ${phase}]` });
     newState.history.push({ role: "assistant", content: cleanResponse });
+    
+    // Mantém histórico curto
+    newState.history = newState.history.slice(-12);
+    
     newState.lastMessageId = lastMsgId;
     await setState(userId, newState);
 
