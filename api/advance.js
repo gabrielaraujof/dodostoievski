@@ -60,11 +60,13 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Invalid state transition" });
     }
 
-    // 4. Atualizar para substate 'chat'
+    // 4. Atualizar para substate 'chat' e salvar IMEDIATAMENTE no banco
+    // Isso garante que a conquista seja validada mesmo que ocorra timeout no resto da função
     const newState = {
       ...state,
       substate: "chat",
     };
+    await setState(userId, newState);
 
     // 5. Gerar uma mensagem de sucesso do Dostoiévski
     const successPrompt = `O usuário acabou de resolver o puzzle da fase ${phase}. Dê as boas vindas ao modo conversa e comente sobre o feito.`;
@@ -94,20 +96,25 @@ export default async function handler(req, res) {
 
       if (text.length === 0) continue;
 
+      // Tempo de digitação reduzido para evitar timeout do Vercel e fechar o Mini App rápido
       await bot.sendChatAction(userId, "typing");
-      const typingDelay = Math.min(Math.max(text.length * 35, 1000), 3000);
+      const typingDelay = Math.min(Math.max(text.length * 15, 500), 1200);
       await new Promise(r => setTimeout(r, typingDelay));
 
-      const sent = await bot.sendMessage(userId, text, { parse_mode: "Markdown" });
+      let sent;
+      try {
+        sent = await bot.sendMessage(userId, text, { parse_mode: "Markdown" });
+      } catch (e) {
+        sent = await bot.sendMessage(userId, text);
+      }
       lastMsgId = sent.message_id;
     }
 
     const cleanResponse = bubbles.map(b => b.replace(/[\s\[\*]*REAÇÃO:.+$/i, "").trim()).join(" ");
 
-    // Adiciona resposta limpa ao histórico
+    // Atualiza histórico e ID da última mensagem no final
     newState.history.push({ role: "assistant", content: cleanResponse });
     newState.lastMessageId = lastMsgId;
-
     await setState(userId, newState);
 
     return res.status(200).json({ ok: true });

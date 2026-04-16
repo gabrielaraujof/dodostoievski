@@ -42,12 +42,18 @@ async function burstToTelegram(chatId, userMessage, state, userMsgId) {
 
     if (text.length === 0) continue;
 
-    // Tempo de digitação proporcional
+    // Tempo de digitação proporcional, porém limitado para não estourar os 10s do Vercel
     await bot.sendChatAction(chatId, "typing");
-    const typingDelay = Math.min(Math.max(text.length * 35, 1000), 3000);
+    const typingDelay = Math.min(Math.max(text.length * 15, 500), 1200);
     await new Promise(r => setTimeout(r, typingDelay));
 
-    const sent = await bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
+    let sent;
+    try {
+      sent = await bot.sendMessage(chatId, text, { parse_mode: "Markdown" });
+    } catch (e) {
+      // Fallback caso o Gemini tenha deixado o Markdown incompleto (ex: um * sem fechar)
+      sent = await bot.sendMessage(chatId, text);
+    }
     lastMsgId = sent.message_id;
   }
 
@@ -61,10 +67,10 @@ async function burstToTelegram(chatId, userMessage, state, userMsgId) {
       "Minha paciência é menor que minhas asas. Responda."
     ];
     const extra = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 500));
     await bot.sendChatAction(chatId, "typing");
-    await new Promise(r => setTimeout(r, 800));
-    const sentExtra = await bot.sendMessage(chatId, extra, { parse_mode: "Markdown" });
+    await new Promise(r => setTimeout(r, 500));
+    const sentExtra = await bot.sendMessage(chatId, extra, { parse_mode: "Markdown" }).catch(async () => await bot.sendMessage(chatId, extra));
     lastMsgId = sentExtra.message_id;
   }
 
