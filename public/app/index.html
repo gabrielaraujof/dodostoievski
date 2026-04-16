@@ -193,24 +193,20 @@
 
       document.getElementById('status').innerText = "Processando vitória...";
       
-      try {
-        const response = await fetch('/api/advance', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            initData: tg.initData,
-            phase: phaseNum
-          })
-        });
+      // DISPARO EM BACKGROUND:
+      // Usamos keepalive: true para que a requisição continue mesmo após fechar a janela.
+      fetch('/api/advance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          initData: tg.initData,
+          phase: phaseNum
+        }),
+        keepalive: true
+      });
 
-        if (response.ok) {
-          tg.close(); // Fecha o Mini App e volta pro chat
-        } else {
-          document.getElementById('status').innerText = "Erro ao validar conquista.";
-        }
-      } catch (err) {
-        document.getElementById('status').innerText = "Erro de conexão.";
-      }
+      // Fecha o Mini App IMEDIATAMENTE.
+      tg.close();
     }
   </script>
 </body>
