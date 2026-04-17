@@ -1,6 +1,6 @@
 import TelegramBot from "node-telegram-bot-api";
 import { getState, setState, resetState } from "../lib/state.js";
-import { generateResponse, shouldAdvancePhase } from "../lib/gemini.js";
+import { generateResponse, shouldAdvancePhase, summarizeHistory } from "../lib/gemini.js";
 import { getPhase } from "../lib/phases.js";
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
@@ -143,11 +143,21 @@ export default async function handler(req, res) {
 
       const advance = await shouldAdvancePhase(userMessage, aiResponse, state);
 
-      const newHistory = [
+      let history = [
         ...state.history,
         { role: "user", content: userMessage },
         { role: "assistant", content: aiResponse },
-      ].slice(-12);
+      ];
+
+      let currentSummary = state.summary || "";
+
+      // GATILHO DE SUMARIZAÇÃO: Se passar de 12 mensagens, comprime as 8 primeiras
+      if (history.length > 12) {
+        const toSummarize = history.slice(0, 8);
+        const freshHistory = history.slice(8);
+        currentSummary = await summarizeHistory(toSummarize, currentSummary);
+        history = freshHistory;
+      }
 
       let newPhase = state.phase;
       let newSubstate = state.substate;
@@ -172,7 +182,8 @@ export default async function handler(req, res) {
       await setState(userId, {
         phase: newPhase,
         substate: newSubstate,
-        history: newHistory,
+        history: history,
+        summary: currentSummary,
       });
 
       return res.status(200).json({ ok: true });
