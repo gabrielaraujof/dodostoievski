@@ -107,9 +107,23 @@ export default async function handler(req, res) {
   try {
     const update = req.body;
 
+    // ── /reset ──────────────────────────────────────────────────────────
+    if (update.message?.text === "/reset") {
+      await resetState(update.message.from.id);
+      await bot.sendMessage(update.message.chat.id, "✨ Memória apagada. Use /start para recomeçar.");
+      return res.status(200).json({ ok: true });
+    }
+
+    // ── /start ──────────────────────────────────────────────────────────
     if (update.message?.text === "/start") {
       const chatId = update.message.chat.id;
       const userId = update.message.from.id;
+
+      const state = await getState(userId);
+      if (state.phase === 5) {
+        await bot.sendMessage(chatId, "A revelação já ocorreu. O que mais você quer de mim? Apenas prossiga com a sua vida.");
+        return res.status(200).json({ ok: true });
+      }
 
       await resetState(userId);
 
@@ -151,7 +165,6 @@ export default async function handler(req, res) {
 
       let currentSummary = state.summary || "";
 
-      // GATILHO DE SUMARIZAÇÃO: Se passar de 12 mensagens, comprime as 8 primeiras
       if (history.length > 12) {
         const toSummarize = history.slice(0, 8);
         const freshHistory = history.slice(8);
@@ -177,6 +190,9 @@ export default async function handler(req, res) {
             inline_keyboard: [[{ text: buttonText, web_app: { url: buttonUrl } }]],
           },
         });
+      } else if (state.phase === 5) {
+        // Se já está na fase 5, garante que o modo de conversa é livre
+        newSubstate = "free_chat";
       }
 
       await setState(userId, {
