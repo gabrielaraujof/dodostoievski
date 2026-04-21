@@ -1,268 +1,171 @@
 <!DOCTYPE html>
-<html lang="ru" data-theme="dark">
+<html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>✨ Revelação</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Dostoiévski - Revelação Final</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=Inter:wght@300;400&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --c1: oklch(0.65 0.28 25);   /* vermelho carmesim */
-      --c2: oklch(0.70 0.22 55);   /* laranja quente */
-      --c3: oklch(0.72 0.20 145);  /* verde esmeralda */
-      --c4: oklch(0.65 0.25 260);  /* azul safira */
-      --c5: oklch(0.68 0.26 310);  /* roxo violeta */
-      --c6: oklch(0.75 0.18 200);  /* ciano */
       --bg: #050508;
       --text: #f0ede8;
-      --text-muted: oklch(0.75 0.04 80);
+      --accent: #ff9d00;
+      --terminal-bg: #0c0c14;
     }
 
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    html { scroll-behavior: smooth; }
-
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
     body {
       background: var(--bg);
       color: var(--text);
-      font-family: 'Inter', sans-serif;
+      font-family: 'JetBrains Mono', monospace;
       min-height: 100dvh;
-      overflow-x: hidden;
-    }
-
-    #canvas {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      z-index: 0;
-    }
-
-    .page {
-      position: relative;
-      z-index: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      min-height: 100dvh;
-      padding: 2rem 1.5rem;
-      text-align: center;
-      gap: 2rem;
+      padding: 20px;
+      overflow: hidden;
     }
 
-    .bg-gradient {
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      background: radial-gradient(ellipse at 20% 50%, oklch(0.25 0.12 310 / 0.4) 0%, transparent 60%),
-                  radial-gradient(ellipse at 80% 20%, oklch(0.25 0.12 25 / 0.35) 0%, transparent 55%),
-                  radial-gradient(ellipse at 60% 80%, oklch(0.22 0.10 260 / 0.3) 0%, transparent 50%),
-                  var(--bg);
-      animation: bgShift 8s ease-in-out infinite alternate;
-    }
-
-    @keyframes bgShift {
-      0%   { filter: hue-rotate(0deg); }
-      100% { filter: hue-rotate(30deg); }
-    }
-
-    .dodo {
-      font-size: clamp(3rem, 10vw, 5rem);
-      animation: float 4s ease-in-out infinite;
-      filter: drop-shadow(0 0 20px oklch(0.70 0.20 310 / 0.6));
-    }
-
-    @keyframes float {
-      0%, 100% { transform: translateY(0) rotate(-3deg); }
-      50%       { transform: translateY(-12px) rotate(3deg); }
-    }
-
-    .title {
-      font-family: 'Cormorant Garamond', Georgia, serif;
-      font-size: clamp(2.2rem, 8vw, 4.5rem);
-      font-weight: 300;
-      font-style: italic;
-      line-height: 1.1;
-      background: linear-gradient(in oklch 135deg,
-        var(--c1), var(--c2), var(--c3), var(--c4), var(--c5), var(--c6));
-      background-size: 300% 300%;
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      animation: gradientFlow 6s ease infinite;
-    }
-
-    @keyframes gradientFlow {
-      0%   { background-position: 0% 50%; }
-      50%  { background-position: 100% 50%; }
-      100% { background-position: 0% 50%; }
-    }
-
-    .verse {
-      font-family: 'Cormorant Garamond', Georgia, serif;
-      font-size: clamp(1.3rem, 4vw, 2rem);
-      font-style: italic;
-      font-weight: 300;
-      color: var(--text-muted);
-      letter-spacing: 0.02em;
-      opacity: 0;
-      animation: fadeUp 1s ease 0.8s forwards;
-    }
-
-    .verse-translation {
-      font-size: clamp(0.8rem, 2.5vw, 1rem);
-      color: oklch(0.60 0.05 80);
-      font-style: normal;
-      margin-top: 0.4rem;
-      letter-spacing: 0.05em;
-      text-transform: uppercase;
-      opacity: 0;
-      animation: fadeUp 1s ease 1.4s forwards;
-    }
-
-    .languages {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 0.6rem;
-      max-width: 400px;
-      opacity: 0;
-      animation: fadeUp 1s ease 1.8s forwards;
-    }
-
-    .lang-chip {
-      padding: 0.3rem 0.9rem;
-      border-radius: 9999px;
-      font-size: 0.8rem;
-      font-weight: 300;
-      letter-spacing: 0.08em;
-      border: 1px solid oklch(1 0 0 / 0.12);
-      background: oklch(1 0 0 / 0.04);
-      backdrop-filter: blur(8px);
-    }
-
-    .message-card {
-      max-width: 480px;
+    #terminal {
       width: 100%;
-      background: oklch(1 0 0 / 0.04);
-      border: 1px solid oklch(1 0 0 / 0.10);
-      border-radius: 1rem;
-      padding: 1.8rem 1.6rem;
-      backdrop-filter: blur(16px);
-      opacity: 0;
-      animation: fadeUp 1s ease 2.2s forwards;
+      max-width: 500px;
+      background: var(--terminal-bg);
+      border: 1px solid rgba(255, 157, 0, 0.3);
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.8), 0 0 20px rgba(255, 157, 0, 0.1);
+      position: relative;
     }
 
-    .message-card p {
-      font-size: clamp(0.95rem, 2.5vw, 1.1rem);
-      line-height: 1.75;
-      color: var(--text-muted);
-      text-align: left;
+    .header {
+      font-size: 0.7rem;
+      color: var(--accent);
+      margin-bottom: 20px;
+      border-bottom: 1px solid rgba(255, 157, 0, 0.2);
+      padding-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
     }
 
-    .message-card p + p { margin-top: 1rem; }
-
-    .highlight { color: var(--text); font-style: italic; }
-
-    .signature {
-      font-family: 'Cormorant Garamond', Georgia, serif;
+    .line { margin-bottom: 15px; font-size: 0.9rem; line-height: 1.4; }
+    .prompt { color: var(--accent); margin-right: 8px; }
+    
+    input {
+      background: transparent;
+      border: none;
+      color: white;
+      font-family: inherit;
       font-size: 1rem;
-      font-style: italic;
-      color: oklch(0.55 0.05 80);
-      margin-top: 1.2rem;
-      text-align: right;
+      outline: none;
+      width: 100%;
+      margin-top: 5px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 5px;
     }
 
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(20px); }
-      to   { opacity: 1; transform: translateY(0); }
+    #revelation {
+      display: none;
+      text-align: center;
+      animation: glitch 1s linear infinite;
     }
+
+    h1 {
+      font-family: 'Cormorant Garamond', serif;
+      font-size: 2.5rem;
+      margin: 20px 0;
+      color: var(--accent);
+    }
+
+    .gift-info {
+      background: rgba(255, 157, 0, 0.1);
+      padding: 20px;
+      border-radius: 8px;
+      margin-top: 20px;
+      font-size: 0.9rem;
+    }
+
+    @keyframes glitch {
+      0% { text-shadow: 2px 0 red, -2px 0 blue; }
+      25% { text-shadow: -2px 0 red, 2px 0 blue; }
+      50% { text-shadow: 2px 0 blue, -2px 0 red; }
+      100% { text-shadow: 0 0 white; }
+    }
+
+    .success-text { color: #4dff88; font-weight: bold; }
   </style>
 </head>
 <body>
 
-<div class="bg-gradient"></div>
-<canvas id="canvas"></canvas>
+  <div id="terminal">
+    <div class="header">
+      <span>DOSTO_TERMINAL_V2.0</span>
+      <span>STATUS: ENCRYPTED</span>
+    </div>
 
-<main class="page">
-  <div class="dodo">🦤</div>
-  <h1 class="title">Feliz Aniversário</h1>
-  <div>
-    <p class="verse">я люблю тебя до слёз</p>
-    <p class="verse-translation">eu te amo até as lágrimas</p>
+    <div id="inputs">
+      <div class="line">
+        <span class="prompt">></span> INSERIR CHAVE 01 (ORIGEM):
+        <input type="text" id="key1" placeholder="..." autocomplete="off">
+      </div>
+      <div class="line">
+        <span class="prompt">></span> INSERIR CHAVE 02 (LÍNGUAS):
+        <input type="text" id="key2" placeholder="..." autocomplete="off">
+      </div>
+      <div class="line">
+        <span class="prompt">></span> INSERIR CHAVE 03 (SILÊNCIO):
+        <input type="text" id="key3" placeholder="..." autocomplete="off">
+      </div>
+      <button onclick="unlock()" style="width: 100%; background: var(--accent); color: black; border: none; padding: 12px; font-family: inherit; font-weight: bold; cursor: pointer; margin-top: 10px; border-radius: 4px;">DESCRIPTOGRAFAR</button>
+    </div>
+
+    <div id="revelation">
+      <div class="success-text">ACESSO CONCEDIDO.</div>
+      <h1>Feliz Aniversário!</h1>
+      <p class="line">Dostoiévski admite (sob protesto) que você é digna.</p>
+      
+      <div class="gift-info">
+        <p><b>LOCAL DO PRESENTE:</b></p>
+        <p>Procure no <b>lugar onde suas unhas ganham uma nova vida</b>.</p>
+        <p style="margin-top: 10px; font-size: 0.8rem; opacity: 0.7;">Há uma carta esperando por você lá.</p>
+      </div>
+
+      <button onclick="window.Telegram.WebApp.close()" style="margin-top: 20px; background: white; color: black; border: none; padding: 10px 20px; cursor: pointer; font-family: inherit; border-radius: 4px;">CONCLUIR PROTOCOLO</button>
+    </div>
   </div>
-  <div class="languages">
-    <span class="lang-chip">🇷🇺 Русский</span>
-    <span class="lang-chip">🇧🇷 Português</span>
-    <span class="lang-chip">🇫🇷 Français</span>
-    <span class="lang-chip">🇪🇸 Español</span>
-    <span class="lang-chip">🇬🇧 English</span>
-    <span class="lang-chip">🇨🇳 中文</span>
-  </div>
-  <div class="message-card">
-    <p>
-      Досtoiévski não acredita em sentimentos. Sentimentos são <span class="highlight">ineficientes</span>.
-      Dodos não sentem saudade, não esperam por mensagens, não sorriem à toa.
-    </p>
-    <p>
-      Mas há um presente esperando por você.
-      Ele não conserta o silêncio com parafusos nem com cola —
-      conserta com <span class="highlight">música de volta</span>.
-    </p>
-    <p>
-      Procure o presente. Há também uma carta.
-      A carta diz o que mesmo Dostoiévski não consegue fingir que não sente.
-    </p>
-    <p class="signature">— Dostoiévski 🦤<br><small style="font-size:0.8em; font-style:normal; color: oklch(0.45 0.05 80)">O único Dodo que leu Tolstói. E não gostou.</small></p>
-  </div>
-</main>
 
-<script>
-  const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d');
-  let W, H, particles = [];
-  const COLORS = ['oklch(0.65 0.28 25)', 'oklch(0.70 0.22 55)', 'oklch(0.72 0.20 145)', 'oklch(0.65 0.25 260)', 'oklch(0.68 0.26 310)', 'oklch(0.75 0.18 200)'];
-  function resize() { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; }
-  function createParticle() { return { x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5 + 0.5, color: COLORS[Math.floor(Math.random() * COLORS.length)], vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3, alpha: Math.random() * 0.5 + 0.1, pulse: Math.random() * Math.PI * 2 }; }
-  function init() { resize(); particles = Array.from({ length: 120 }, createParticle); }
-  function draw() { ctx.clearRect(0, 0, W, H); particles.forEach(p => { p.pulse += 0.02; p.x += p.vx; p.y += p.vy; if (p.x < 0) p.x = W; if (p.x > W) p.x = 0; if (p.y < 0) p.y = H; if (p.y > H) p.y = 0; const a = p.alpha * (0.6 + 0.4 * Math.sin(p.pulse)); ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fillStyle = p.color; ctx.globalAlpha = a; ctx.fill(); }); ctx.globalAlpha = 1; requestAnimationFrame(draw); }
-  window.addEventListener('resize', resize);
-  init(); draw();
-
-  function launchConfetti() {
-    const count = 80;
-    const colors = ['#ff6b6b','#ffd93d','#6bcb77','#4d96ff','#c77dff','#ff9f1c'];
-    for (let i = 0; i < count; i++) {
-      setTimeout(() => {
-        const el = document.createElement('div');
-        const size = Math.random() * 8 + 5;
-        el.style.cssText = `position:fixed; top:-10px; left:${Math.random()*100}vw; width:${size}px; height:${size}px; background:${colors[Math.floor(Math.random()*colors.length)]}; border-radius:${Math.random() > 0.5 ? '50%' : '2px'}; pointer-events:none; z-index:9999; animation: fall ${2+Math.random()*2}s ease-in forwards; transform: rotate(${Math.random()*360}deg);`;
-        document.body.appendChild(el);
-        setTimeout(() => el.remove(), 4000);
-      }, i * 30);
-    }
-  }
-
-  const style = document.createElement('style');
-  style.textContent = `@keyframes fall { to { transform: translateY(105vh) rotate(${Math.random()*720}deg); opacity:0; } }`;
-  document.head.appendChild(style);
-
-  setTimeout(launchConfetti, 2800);
-  setTimeout(launchConfetti, 5000);
-
-  async function notifyBot() {
+  <script>
     const tg = window.Telegram.WebApp;
-    if (!tg.initData) return;
-    await fetch('/api/advance', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ initData: tg.initData, phase: 5 })
-    });
-  }
-  notifyBot();
-</script>
+    tg.expand();
+    tg.ready();
+
+    function unlock() {
+      const k1 = document.getElementById('key1').value.toUpperCase().trim();
+      const k2 = document.getElementById('key2').value.toUpperCase().trim();
+      const k3 = document.getElementById('key3').value.toUpperCase().trim();
+
+      // Aceita variações simples
+      const v1 = k1 === 'TOMYUM' || k1 === 'TOM YUM';
+      const v2 = k2 === 'SLEZY' || k2 === 'СЛЕЗЫ' || k2 === 'LAGRIMAS' || k2 === 'LÁGRIMAS';
+      const v3 = k3 === 'PURSE' || k3 === 'BOLSA';
+
+      if (v1 && v2 && v3) {
+        document.getElementById('inputs').style.display = 'none';
+        document.getElementById('revelation').style.display = 'block';
+        document.querySelector('.header span:last-child').innerText = 'STATUS: DECRYPTED';
+        document.querySelector('.header span:last-child').style.color = '#4dff88';
+        
+        // Confetti? O Mini App do Telegram já tem o seu próprio charme, mas vamos fechar com chave de ouro
+        if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+      } else {
+        if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+        alert("CHAVES INCORRETAS. O DODO ESTÁ DECEPCIONADO.");
+      }
+    }
+  </script>
 </body>
 </html>

@@ -3,18 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Dostoiévski - Desafios</title>
+  <title>Dostoiévski - Terminal de Enigmas</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=Inter:wght@300;400;600&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #050508;
+      --bg: #0a0a0f;
       --text: #f0ede8;
-      --accent: oklch(0.70 0.22 55); /* laranja dosto */
-      --card-bg: oklch(1 0 0 / 0.05);
-      --border: oklch(1 0 0 / 0.1);
+      --accent: #ff9d00;
+      --card-bg: rgba(255, 255, 255, 0.03);
+      --border: rgba(255, 255, 255, 0.1);
+      --error: #ff4d4d;
+      --success: #4dff88;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -26,7 +28,7 @@
       min-height: 100dvh;
       display: flex;
       flex-direction: column;
-      overflow: hidden;
+      overflow-x: hidden;
     }
 
     #app {
@@ -35,15 +37,15 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      padding: 24px;
       text-align: center;
     }
 
     .phase-container {
       width: 100%;
-      max-width: 500px;
+      max-width: 450px;
       display: none;
-      animation: fadeIn 0.5s ease;
+      animation: scanline 4s linear infinite, fadeIn 0.6s ease-out;
     }
 
     .phase-container.active { display: block; }
@@ -52,122 +54,190 @@
       font-family: 'Cormorant Garamond', serif;
       font-style: italic;
       font-weight: 300;
-      font-size: 2.5rem;
-      margin-bottom: 1rem;
+      font-size: 2.2rem;
+      margin-bottom: 0.5rem;
       color: var(--accent);
+      text-shadow: 0 0 10px rgba(255, 157, 0, 0.3);
     }
 
-    p {
-      color: oklch(0.85 0.02 80);
-      line-height: 1.6;
+    .subtitle {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: rgba(255, 255, 255, 0.5);
       margin-bottom: 2rem;
+      text-transform: uppercase;
+      letter-spacing: 2px;
     }
 
     .puzzle-box {
       background: var(--card-bg);
       border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 24px;
-      backdrop-filter: blur(10px);
+      border-radius: 20px;
+      padding: 30px;
+      backdrop-filter: blur(15px);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     }
 
-    /* ── Estilos do Puzzle 1 ── */
-    .grid-thai {
+    /* ── Fase 1: Reconstrução de Memória ── */
+    .memory-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: 1fr;
       gap: 12px;
     }
-    .thai-item {
-      padding: 15px;
-      background: oklch(1 0 0 / 0.08);
+    .memory-item {
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      cursor: pointer;
+      text-align: left;
+      font-size: 0.95rem;
+      transition: all 0.3s;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .memory-item.selected {
+      border-color: var(--accent);
+      background: rgba(255, 157, 0, 0.1);
+      box-shadow: inset 0 0 10px rgba(255, 157, 0, 0.2);
+    }
+    .check-mark { color: var(--accent); opacity: 0; transition: 0.2s; }
+    .memory-item.selected .check-mark { opacity: 1; }
+
+    /* ── Fase 2: Cifra Poliglota ── */
+    .cipher-container { display: flex; flex-direction: column; gap: 20px; }
+    .cipher-text { font-family: 'Cormorant Garamond', serif; font-size: 1.4rem; font-style: italic; }
+    .cyrillic-options { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .cyrillic-btn {
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.05);
       border: 1px solid var(--border);
       border-radius: 8px;
+      color: white;
+      font-family: 'JetBrains Mono', monospace;
       cursor: pointer;
-      transition: all 0.2s;
     }
-    .thai-item:active { background: var(--accent); color: white; }
+    .cyrillic-btn.active { background: var(--accent); border-color: var(--accent); }
 
-    /* ── Estilos do Puzzle 2 ── */
-    .lang-slots {
+    /* ── Fase 3: Áudio Mofado ── */
+    .waveform-visualizer {
+      height: 60px;
       display: flex;
-      flex-direction: column;
-      gap: 15px;
+      align-items: center;
+      gap: 3px;
+      margin: 20px 0;
+      justify-content: center;
     }
-    .lang-slot {
-      padding: 12px;
-      border-bottom: 1px dashed var(--border);
-      font-style: italic;
+    .bar { width: 4px; height: 20px; background: var(--accent); animation: pulse 1s infinite alternate; }
+    .bar:nth-child(2n) { animation-delay: 0.2s; height: 35px; }
+    .bar:nth-child(3n) { animation-delay: 0.4s; height: 15px; }
+    
+    .tuner-input {
+      width: 100%;
+      height: 40px;
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      text-align: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.1rem;
+      margin-top: 10px;
     }
 
     .solve-btn {
       background: var(--accent);
-      color: white;
+      color: #000;
       border: none;
-      padding: 14px 28px;
-      border-radius: 999px;
-      font-weight: 600;
-      margin-top: 20px;
+      padding: 16px 40px;
+      border-radius: 12px;
+      font-weight: 700;
+      margin-top: 30px;
       cursor: pointer;
+      width: 100%;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      box-shadow: 0 4px 15px rgba(255, 157, 0, 0.4);
     }
 
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
+    .solve-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    .status-msg { margin-top: 15px; font-size: 0.9rem; opacity: 0.8; }
+    @keyframes pulse { from { height: 10px; opacity: 0.5; } to { height: 40px; opacity: 1; } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+
+    .status-msg { margin-top: 20px; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--error); height: 20px; }
+    
+    .dodo-hint { font-size: 0.8rem; color: rgba(255,255,255,0.4); margin-bottom: 10px; font-style: italic; }
   </style>
 </head>
 <body>
 
   <div id="app">
-    <!-- Fase 1 -->
+    <!-- Fase 1: Reconstrução -->
     <div id="phase-1" class="phase-container">
+      <div class="subtitle">System.Memory.Restore()</div>
       <h1>A Origem 🟠</h1>
-      <p>Onde dois mundos se encontraram? Toque no prato que marcou o início.</p>
+      <p class="dodo-hint">"Humanos e sua memória biológica patética. Selecione os fatos que desviaram nosso destino."</p>
+      
       <div class="puzzle-box">
-        <div class="grid-thai">
-          <div class="thai-item" onclick="solve(1, 'Pad Thai')">Pad Thai</div>
-          <div class="thai-item" onclick="solve(1, 'Sushi')">Sushi</div>
-          <div class="thai-item" onclick="solve(1, 'Pizza')">Pizza</div>
-          <div class="thai-item" onclick="solve(1, 'Tom Yum')">Tom Yum</div>
+        <div class="memory-grid">
+          <div class="memory-item" onclick="toggleSelection(this, 'late')">
+            <span>Chegada com Atraso</span>
+            <span class="check-mark">✔</span>
+          </div>
+          <div class="memory-item" onclick="toggleSelection(this, 'tomyum')">
+            <span>Alergia ao Tom Yum</span>
+            <span class="check-mark">✔</span>
+          </div>
+          <div class="memory-item" onclick="toggleSelection(this, 'bakery')">
+            <span>Carlo's Bakery Fechada</span>
+            <span class="check-mark">✔</span>
+          </div>
+          <div class="memory-item" onclick="toggleSelection(this, 'pizza')">
+            <span>Pizza de 4 queijos</span>
+            <span class="check-mark">✔</span>
+          </div>
         </div>
+        <button class="solve-btn" onclick="validatePhase1()">Validar Memória</button>
       </div>
     </div>
 
-    <!-- Fase 2 -->
+    <!-- Fase 2: Poliglota -->
     <div id="phase-2" class="phase-container">
+      <div class="subtitle">Module.Language.Decrypt()</div>
       <h1>As Línguas 🔵</h1>
-      <p>Dostoiévski misturou tudo. Você consegue entender?</p>
+      <p class="dodo-hint">"Je t'aime. Te quiero. Mas o verdadeiro peso está nas..."</p>
+      
       <div class="puzzle-box">
-        <div class="lang-slots">
-          <div class="lang-slot">"Je t'aime..."</div>
-          <div class="lang-slot">"...y te quiero..."</div>
-          <div class="lang-slot">"...я люблю тебя."</div>
+        <div class="cipher-container">
+          <div class="cipher-text">"Amor é fogo que arde sem se ver, é ferida que dói e não se sente... mas aqui, são apenas..."</div>
+          <div class="cyrillic-options">
+            <button class="cyrillic-btn" onclick="selectCyrillic(this, 'Улыбка')">Улыбка (Sorriso)</button>
+            <button class="cyrillic-btn" onclick="selectCyrillic(this, 'Слезы')">Слёзы (Lágrimas)</button>
+            <button class="cyrillic-btn" onclick="selectCyrillic(this, 'Песня')">Песня (Canção)</button>
+            <button class="cyrillic-btn" onclick="selectCyrillic(this, 'Птица')">Птица (Pássaro)</button>
+          </div>
         </div>
-        <button class="solve-btn" onclick="solve(2)">Compreendido</button>
+        <button class="solve-btn" onclick="validatePhase2()">Desbloquear Setor</button>
       </div>
     </div>
 
-    <!-- Fase 3 -->
+    <!-- Fase 3: Áudio -->
     <div id="phase-3" class="phase-container">
+      <div class="subtitle">Signal.Audio.Reconstruct()</div>
       <h1>A Música 🟣</h1>
-      <p>Sinta a melancolia russa.</p>
+      <p class="dodo-hint">"Meus microfones estão captando algo... ou talvez seja só meu talento natural."</p>
+      
       <div class="puzzle-box">
-        <div style="font-size: 4rem; margin-bottom: 1rem;">🎵</div>
-        <p><i>я люблю тебя до слёз...</i></p>
-        <button class="solve-btn" onclick="solve(3)">Sentir a Música</button>
-      </div>
-    </div>
-
-    <!-- Fase 4 -->
-    <div id="phase-4" class="phase-container">
-      <h1>O Silêncio 🩶</h1>
-      <p>Alguns silêncios valem mais que mil palavras.</p>
-      <div class="puzzle-box">
-        <div style="font-size: 4rem; margin-bottom: 1rem;">🔇</div>
-        <p>Corte o fio do ruído para encontrar a paz.</p>
-        <button class="solve-btn" onclick="solve(4)">Aceitar o Silêncio</button>
+        <div class="waveform-visualizer">
+          <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+          <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+          <div class="bar"></div><div class="bar"></div>
+        </div>
+        <p style="font-size: 0.9rem; margin-bottom: 10px;">Sintonize a palavra que transborda:</p>
+        <input type="text" class="tuner-input" id="audio-input" placeholder="DIGITE O SENTIMENTO..." autofocus>
+        <button class="solve-btn" onclick="validatePhase3()">Limpar Sinal</button>
       </div>
     </div>
 
@@ -181,32 +251,72 @@
 
     const urlParams = new URLSearchParams(window.location.search);
     const phase = urlParams.get('phase') || '1';
-
-    // Ativa a fase correta
     document.getElementById(`phase-${phase}`)?.classList.add('active');
 
-    async function solve(phaseNum, value = null) {
-      if (phaseNum == 1 && value !== 'Pad Thai') {
-        document.getElementById('status').innerText = "Dostoiévski balança a cabeça negativamente.";
-        return;
+    // --- Lógica Fase 1 ---
+    let selectedMemories = new Set();
+    function toggleSelection(el, key) {
+      if (selectedMemories.has(key)) {
+        selectedMemories.delete(key);
+        el.classList.remove('selected');
+      } else {
+        selectedMemories.add(key);
+        el.classList.add('selected');
       }
+    }
+    function validatePhase1() {
+      const correct = selectedMemories.has('tomyum') && selectedMemories.has('bakery') && selectedMemories.size === 2;
+      if (correct) {
+        complete(1);
+      } else {
+        showError("Memória fragmentada. Tente novamente.");
+      }
+    }
 
-      document.getElementById('status').innerText = "Processando vitória...";
+    // --- Lógica Fase 2 ---
+    let selectedWord = "";
+    function selectCyrillic(el, word) {
+      document.querySelectorAll('.cyrillic-btn').forEach(b => b.classList.remove('active'));
+      el.classList.add('active');
+      selectedWord = word;
+    }
+    function validatePhase2() {
+      if (selectedWord === 'Слезы') {
+        complete(2);
+      } else {
+        showError("Tradução medíocre. Incorreto.");
+      }
+    }
+
+    // --- Lógica Fase 3 ---
+    function validatePhase3() {
+      const val = document.getElementById('audio-input').value.toLowerCase().trim();
+      const validAnswers = ['lagrimas', 'lágrimas', 'slezy', 'tears', 'sincero', 'sincera'];
+      if (validAnswers.some(a => val.includes(a))) {
+        complete(3);
+      } else {
+        showError("A frequência está errada. Tente 'Lágrimas'.");
+      }
+    }
+
+    function showError(msg) {
+      const s = document.getElementById('status');
+      s.innerText = msg;
+      setTimeout(() => s.innerText = "", 3000);
+    }
+
+    function complete(p) {
+      document.getElementById('status').style.color = "var(--success)";
+      document.getElementById('status').innerText = "VITORIA DETECTADA. FECHANDO...";
       
-      // DISPARO EM BACKGROUND:
-      // Usamos keepalive: true para que a requisição continue mesmo após fechar a janela.
       fetch('/api/advance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          initData: tg.initData,
-          phase: phaseNum
-        }),
+        body: JSON.stringify({ initData: tg.initData, phase: p }),
         keepalive: true
       });
 
-      // Fecha o Mini App IMEDIATAMENTE.
-      tg.close();
+      setTimeout(() => tg.close(), 1000);
     }
   </script>
 </body>

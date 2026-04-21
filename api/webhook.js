@@ -145,6 +145,36 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
+    // ── callback_query (Botões Inline) ───────────────────────────────
+    if (update.callback_query) {
+      const chatId = update.callback_query.message.chat.id;
+      const userId = update.callback_query.from.id;
+      const data = update.callback_query.data;
+
+      const state = await getState(userId);
+
+      if (data === "solve_phase_4_purse") {
+        await bot.answerCallbackQuery(update.callback_query.id, { text: "Estratégia validada! 🦤" });
+        await bot.editMessageText("*Estratégia da Bolsa:* Validada com sucesso. Você finalmente parou de esquecer o óbvio.", {
+          chat_id: chatId,
+          message_id: update.callback_query.message.message_id,
+          parse_mode: "Markdown"
+        });
+
+        // Avança para o chat da fase 4
+        await setState(userId, { ...state, substate: "chat" });
+        await burstToTelegram(chatId, "[SINAL: O usuário escolheu a Estratégia da Bolsa]", null, { ...state, substate: "chat" });
+        return res.status(200).json({ ok: true });
+      }
+
+      if (data.startsWith("wrong_phase_4")) {
+        await bot.answerCallbackQuery(update.callback_query.id, { text: "Errado! Tente novamente, humano.", show_alert: true });
+        return res.status(200).json({ ok: true });
+      }
+
+      return res.status(200).json({ ok: true });
+    }
+
     if (update.message?.text) {
       const chatId = update.message.chat.id;
       const userId = update.message.from.id;
@@ -182,16 +212,27 @@ export default async function handler(req, res) {
 
         await new Promise((r) => setTimeout(r, 1200));
 
-        const buttonUrl = newPhase === 5 ? `${BASE_URL}/revelation/` : `${BASE_URL}/app/?phase=${newPhase}`;
-        const buttonText = newPhase === 5 ? "🌈 Revelação Final" : `✨ Próximo Enigma`;
-
-        await bot.sendMessage(chatId, "↓", {
-          reply_markup: {
-            inline_keyboard: [[{ text: buttonText, web_app: { url: buttonUrl } }]],
-          },
-        });
+        let inline_keyboard = [];
+        if (newPhase === 4) {
+          // Fase 4 é resolvida no chat com botões
+          inline_keyboard = [
+            [{ text: "💼 Bolso da Calça", callback_data: "wrong_phase_4_pocket" }],
+            [{ text: "🚗 Porta-luvas do Carro", callback_data: "wrong_phase_4_car" }],
+            [{ text: "👜 Dentro da Bolsa", callback_data: "solve_phase_4_purse" }]
+          ];
+          await bot.sendMessage(chatId, "*Dostoiévski pergunta:* Como você finalmente garantiu que os fones estariam com você para o conserto?", {
+            parse_mode: "Markdown",
+            reply_markup: { inline_keyboard }
+          });
+        } else {
+          const buttonUrl = newPhase === 5 ? `${BASE_URL}/revelation/` : `${BASE_URL}/app/?phase=${newPhase}`;
+          const buttonText = newPhase === 5 ? "🌈 Revelação Final" : `✨ Próximo Enigma`;
+          inline_keyboard = [[{ text: buttonText, web_app: { url: buttonUrl } }]];
+          await bot.sendMessage(chatId, "↓", {
+            reply_markup: { inline_keyboard }
+          });
+        }
       } else if (state.phase === 5) {
-        // Se já está na fase 5, garante que o modo de conversa é livre
         newSubstate = "free_chat";
       }
 
