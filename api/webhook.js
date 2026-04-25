@@ -163,7 +163,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // ── poll_answer (Respostas de Quiz) ─────────────────────────────────
     if (update.poll_answer) {
       const userId = update.poll_answer.user.id;
       const optionIds = update.poll_answer.option_ids;
@@ -181,16 +180,31 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
-      const newState = { ...state, substate: "chat" };
+      // Acertou: avança para a próxima fase
+      const newPhase = state.phase + 1;
+      const nextPhase = getPhase(newPhase);
+      const newState = { ...state, phase: newPhase, substate: "puzzle" };
       await setState(userId, newState);
 
       if (state.chatId) {
+        // Dodo parabeniza e faz a transição narrativa
         await burstToTelegram(
           state.chatId,
-          "[SINAL: A usuária acertou o quiz. Parabenize com ironia e prepare-a para o próximo passo da fase.]",
+          "[SINAL: A usuária acertou o quiz. Parabenize com ironia e transicione para a próxima fase da narrativa.]",
           null,
           newState
         );
+
+        // Se a próxima fase também tem poll, envia imediatamente
+        if (nextPhase.advanceType === "poll") {
+          await new Promise(r => setTimeout(r, 2000));
+          await bot.sendPoll(state.chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
+            type: "quiz",
+            correct_option_id: nextPhase.correctOptionId,
+            is_anonymous: false,
+            explanation: "Dostoiévski sabia. Você deveria também. 🦤",
+          });
+        }
       }
 
       return res.status(200).json({ ok: true });
