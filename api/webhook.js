@@ -240,6 +240,25 @@ export default async function handler(req, res) {
 
       const aiResponse = await burstToTelegram(chatId, userMessage, userMsgId, state);
 
+      // Fase 1 no substate puzzle: valida semanticamente se ela reconheceu o contexto
+      // Se sim, transiciona para chat e salva. O avanço para Fase 2 acontece no próximo turno.
+      if (state.phase === 1 && state.substate === "puzzle") {
+        const solved = await shouldAdvancePhase(userMessage, aiResponse, { ...state, substate: "chat" });
+        const newSubstate = solved ? "chat" : "puzzle";
+        await setState(userId, {
+          ...state,
+          substate: newSubstate,
+          chatId,
+          history: [
+            ...state.history,
+            { role: "user", content: userMessage },
+            { role: "assistant", content: aiResponse },
+          ],
+          summary: state.summary || "",
+        });
+        return res.status(200).json({ ok: true });
+      }
+
       const advance = await shouldAdvancePhase(userMessage, aiResponse, state);
 
       let history = [
