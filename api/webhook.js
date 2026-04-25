@@ -5,6 +5,21 @@ import { getPhase } from "../lib/phases.js";
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 
+// IMPORTANTE: O webhook deve ser registrado com allowed_updates incluindo "poll_answer".
+// Use: ["message", "callback_query", "poll_answer"]
+
+const THAI_TAI_PHOTO = process.env.THAI_TAI_PHOTO_ID || "";
+
+const PHASE1_CAPTION = `*Dostoiévski olha para você com um ar de superioridade.* 🦤
+
+Ah. Finalmente chegou.
+
+Enigmas. À altura da minha inteligência — e talvez da sua.
+
+Há um lugar em São Paulo onde tudo começou. Aromas de um país distante. Uma reação alérgica memorável. Um plano que falhou e um que salvou a noite.
+
+Você se lembra do nome desse lugar?`;
+
 // ─── Emojis válidos para reação no Telegram ───────────────────────────────
 const VALID_REACTION_EMOJIS = new Set([
   "👍","👎","❤️","🔥","🥰","👏","😁","🤔","🤯","😱",
@@ -127,20 +142,56 @@ export default async function handler(req, res) {
 
       await resetState(userId);
 
-      const welcome = `*Dostoiévski olha para você com um ar de superioridade.* 🦤\n\nAh. Finalmente chegou. Eu já esperava — a gravidade me arremessou aqui e fui designado para guiá-la.\n\nCinco enigmas. À altura da minha inteligência, e talvez da sua. Veremos.\n\nHá um lugar em São Paulo onde tudo começou. Aromas de um país distante. Dois mundos se encontrando pela primeira vez.\n\nVocê se lembra?`;
-
       await setState(userId, {
         phase: 1,
         substate: "puzzle",
-        history: [{ role: "assistant", content: welcome }],
+        chatId: chatId,
+        history: [{ role: "assistant", content: PHASE1_CAPTION }],
       });
 
-      await bot.sendMessage(chatId, welcome, {
-        parse_mode: "Markdown",
-        reply_markup: {
-          inline_keyboard: [[{ text: "🟠 Primeiro Enigma", web_app: { url: `${BASE_URL}/app/?phase=1` } }]],
-        },
-      });
+      if (THAI_TAI_PHOTO) {
+        await bot.sendPhoto(chatId, THAI_TAI_PHOTO, {
+          caption: PHASE1_CAPTION,
+          parse_mode: "Markdown",
+        });
+      } else {
+        await bot.sendMessage(chatId, PHASE1_CAPTION, {
+          parse_mode: "Markdown",
+        });
+      }
+
+      return res.status(200).json({ ok: true });
+    }
+
+    // ── poll_answer (Respostas de Quiz) ─────────────────────────────────
+    if (update.poll_answer) {
+      const userId = update.poll_answer.user.id;
+      const optionIds = update.poll_answer.option_ids;
+      const state = await getState(userId);
+      const phase = getPhase(state.phase);
+
+      if (phase.advanceType !== "poll") return res.status(200).json({ ok: true });
+
+      const isCorrect = optionIds.includes(phase.correctOptionId);
+
+      if (!isCorrect) {
+        if (state.chatId) {
+          await bot.sendMessage(state.chatId, "Errado. Tente de novo — ou admita a derrota. 🦤");
+        }
+        return res.status(200).json({ ok: true });
+      }
+
+      const newState = { ...state, substate: "chat" };
+      await setState(userId, newState);
+
+      if (state.chatId) {
+        await burstToTelegram(
+          state.chatId,
+          "[SINAL: A usuária acertou o quiz. Parabenize com ironia e prepare-a para o próximo passo da fase.]",
+          null,
+          newState
+        );
+      }
 
       return res.status(200).json({ ok: true });
     }
@@ -181,6 +232,10 @@ export default async function handler(req, res) {
       const userMsgId = update.message.message_id;
       const userMessage = update.message.text;
 
+      const currentState = await getState(userId);
+      if (!currentState.chatId) {
+        await setState(userId, { ...currentState, chatId });
+      }
       const state = await getState(userId);
 
       const aiResponse = await burstToTelegram(chatId, userMessage, userMsgId, state);
@@ -207,8 +262,29 @@ export default async function handler(req, res) {
 
       if (advance && state.phase < 5) {
         newPhase = state.phase + 1;
-        newSubstate = "puzzle";
+
         const nextPhase = getPhase(newPhase);
+
+        if (nextPhase.advanceType === "poll") {
+          await new Promise(r => setTimeout(r, 1200));
+          await bot.sendPoll(chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
+            type: "quiz",
+            correct_option_id: nextPhase.correctOptionId,
+            is_anonymous: false,
+            explanation: "Dostoiévski sabia. Você deveria também. 🦤",
+          });
+          await setState(userId, {
+            phase: newPhase,
+            substate: "puzzle",
+            history: state.history,
+            summary: state.summary || "",
+            chatId: chatId,
+          });
+          return res.status(200).json({ ok: true });
+        }
+
+        newSubstate = "puzzle";
+        const nextPhaseObj = getPhase(newPhase);
 
         await new Promise((r) => setTimeout(r, 1200));
 
