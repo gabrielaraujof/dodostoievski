@@ -1,6 +1,6 @@
 import TelegramBot from "node-telegram-bot-api";
 import { getState, setState, resetState, claimUpdate } from "../lib/state.js";
-import { generateResponse, shouldAdvancePhase, summarizeHistory } from "../lib/gemini.js";
+import { generateResponse, shouldAdvancePhase, summarizeHistory, validateAnswer } from "../lib/gemini.js";
 import { getPhase } from "../lib/phases.js";
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
@@ -19,23 +19,6 @@ const VALID_REACTION_EMOJIS = new Set([
   "😴","😭","🤓","👻","👨‍💻","👀","🎃","🙈","😇","😂",
   "🥲","🤝","🎁"
 ]);
-
-// ─── Normaliza string para casamento de respostas (lowercase + sem diacríticos) ───
-function normalizeAnswer(s) {
-  return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-}
-
-// ─── Verifica se a mensagem da usuária bate com algum padrão esperado da fase ───
-function matchesExpectedAnswer(message, patterns) {
-  if (!patterns || patterns.length === 0) return false;
-  const cyrillic = (message || "").toLowerCase();
-  const stripped = normalizeAnswer(message);
-  for (const raw of patterns) {
-    const re = new RegExp(raw, "i");
-    if (re.test(cyrillic) || re.test(stripped)) return true;
-  }
-  return false;
-}
 
 // ─── Extrai reação e texto limpo de uma bolha ─────────────────────────────
 function parseReaction(bubbleText) {
@@ -98,16 +81,6 @@ async function burstToTelegram(chatId, userMessage, userMsgId, state) {
       const sent = await bot.sendMessage(chatId, text);
       lastSentMsgId = sent.message_id;
     }
-  }
-
-  // Guardrail: se o Dodo esqueceu da pergunta, injeta provocação
-  const lastBubble = bubbles[bubbles.length - 1] || "";
-  if (!/[?!\n]$/.test(lastBubble)) {
-    const fallbacks = ["Vai responder ou não?", "O silêncio dos primatas é ensurdecedor.", "Perdeu a língua?", "Responda."];
-    const extra = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-    await new Promise(r => setTimeout(r, 300));
-    const sentExtra = await bot.sendMessage(chatId, extra).catch(() => {});
-    if (sentExtra) lastSentMsgId = sentExtra.message_id;
   }
 
   return bubbles.map((b) => parseReaction(b).text).filter(Boolean).join(" ");
@@ -236,10 +209,10 @@ export default async function handler(req, res) {
       await setState(userId, newState);
 
       if (state.chatId) {
-        // Dodo parabeniza e faz a transição narrativa
+        // Dodo parabeniza pelo conhecimento musical russo (Alexander Serov) e transiciona.
         await burstToTelegram(
           state.chatId,
-          "[SINAL: A usuária acertou o quiz. Parabenize com ironia e transicione para a próxima fase da narrativa.]",
+          "[SINAL: A usuária acertou o quiz musical — identificou Alexander Serov como o intérprete de 'Я люблю тебя до слёз'. Reconheça em 1-2 bolhas curtas, no seu tom ácido, que ela conhece a voz russa certa. NÃO comente sobre a palavra 'lágrimas' (já tratado na fase anterior). NÃO recapitule a Fase 1 (Tom Yum, padaria, Augusta). Apenas costure rapidamente para o próximo enigma técnico que vem a seguir.]",
           null,
           newState
         );
@@ -282,15 +255,15 @@ export default async function handler(req, res) {
       const state = await getState(userId);
 
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      // Casamento determinístico ANTES do LLM. Se a resposta dela bate no
-      // padrão da fase atual (Fase 2 = cento, Fase 4 = cifra), avança no
-      // mesmo turno SEM chamar o LLM — caso contrário o modelo, sem saber
-      // que ela acertou, gera bolhas de rejeição que aparecem antes do
-      // próximo enigma e parecem hallucination.
+      // Validação via LLM ANTES do conversacional. Para qualquer fase em
+      // substate "puzzle" com expectedAnswer definida, um modelo robusto
+      // (gemini-pro-latest) decide se a mensagem contém a resposta esperada.
+      // Se sim, avançamos no mesmo turno sem chamar o LLM conversacional —
+      // assim evitamos rejeições alucinadas e re-entrega de fases passadas.
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       const currentPhase = getPhase(state.phase);
-      if (state.substate === "puzzle" && currentPhase.expectedAnswerPatterns) {
-        const solved = matchesExpectedAnswer(userMessage, currentPhase.expectedAnswerPatterns);
+      if (state.substate === "puzzle" && currentPhase.expectedAnswer) {
+        const solved = await validateAnswer(userMessage, currentPhase);
         if (solved) {
           const newPhase = state.phase + 1;
           const nextPhase = getPhase(newPhase);
@@ -325,6 +298,10 @@ export default async function handler(req, res) {
             } else {
               await new Promise(r => setTimeout(r, 600));
             }
+            // Bolha determinística com os 3 códigos verbatim, formato Markdown
+            // garantido pelo servidor — não dependemos do LLM acertar crases.
+            await bot.sendMessage(chatId, "`TOMYUM`\n`SLEZY`\n`KOT`", { parse_mode: "Markdown" });
+            await new Promise(r => setTimeout(r, 500));
             await bot.sendMessage(chatId, "🦤 The Terminal of Repairs is open. Step in.", {
               reply_markup: {
                 inline_keyboard: [[{ text: "🌈 Open the Terminal of Repairs", web_app: { url: `${BASE_URL}/revelation/` } }]],
@@ -334,7 +311,7 @@ export default async function handler(req, res) {
 
           await setState(userId, {
             phase: newPhase,
-            substate: "puzzle",
+            substate: nextPhase.advanceType === "webapp" ? "free_chat" : "puzzle",
             chatId,
             history: updatedHistory,
             summary: state.summary || "",
@@ -343,46 +320,9 @@ export default async function handler(req, res) {
         }
       }
 
-      // Resposta não bateu no padrão (ou fase sem padrão): roda o LLM normalmente.
+      // Não acertou (ou fase sem expectedAnswer): roda LLM conversacional pra
+      // dar pistas, provocar, ou conversar livremente.
       const aiResponse = await burstToTelegram(chatId, userMessage, userMsgId, state);
-
-      // Fase 1 no substate puzzle: valida semanticamente se ela reconheceu o contexto
-      // Se sim, transiciona para chat e salva. O avanço para Fase 2 acontece no próximo turno.
-      if (state.phase === 1 && state.substate === "puzzle") {
-        const solved = await shouldAdvancePhase(userMessage, aiResponse, { ...state, substate: "chat" });
-        const newSubstate = solved ? "chat" : "puzzle";
-        await setState(userId, {
-          ...state,
-          substate: newSubstate,
-          chatId,
-          history: [
-            ...state.history,
-            { role: "user", content: userMessage },
-            { role: "assistant", content: aiResponse },
-          ],
-          summary: state.summary || "",
-        });
-        return res.status(200).json({ ok: true });
-      }
-
-      // Fases com puzzle determinístico que NÃO acertaram: registra histórico e mantém em puzzle.
-      if (state.substate === "puzzle" && currentPhase.expectedAnswerPatterns) {
-        const updatedHistory = [
-          ...state.history,
-          { role: "user", content: userMessage },
-          { role: "assistant", content: aiResponse },
-        ].slice(-12);
-
-        await setState(userId, {
-          ...state,
-          chatId,
-          history: updatedHistory,
-          summary: state.summary || "",
-        });
-        return res.status(200).json({ ok: true });
-      }
-
-      const advance = await shouldAdvancePhase(userMessage, aiResponse, state);
 
       let history = [
         ...state.history,
@@ -399,65 +339,12 @@ export default async function handler(req, res) {
         history = freshHistory;
       }
 
-      let newPhase = state.phase;
-      let newSubstate = state.substate;
-
-      if (advance && state.phase < 5) {
-        newPhase = state.phase + 1;
-
-        const nextPhase = getPhase(newPhase);
-
-        // Próxima fase tem um enigma gerado pelo LLM via SINAL (Fase 2 cento, Fase 4 cifra)
-        if (nextPhase.puzzleSignal) {
-          await new Promise(r => setTimeout(r, 600));
-          await burstToTelegram(chatId, nextPhase.puzzleSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
-          await setState(userId, {
-            phase: newPhase,
-            substate: "puzzle",
-            history: history,
-            summary: currentSummary,
-            chatId: chatId,
-          });
-          return res.status(200).json({ ok: true });
-        }
-
-        if (nextPhase.advanceType === "poll") {
-          await new Promise(r => setTimeout(r, 600));
-          await bot.sendPoll(chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
-            type: "quiz",
-            correct_option_id: nextPhase.correctOptionId,
-            is_anonymous: false,
-            explanation: "Dostoiévski sabia. Você deveria também. 🦤",
-          });
-          await setState(userId, {
-            phase: newPhase,
-            substate: "puzzle",
-            history: history,
-            summary: currentSummary,
-            chatId: chatId,
-          });
-          return res.status(200).json({ ok: true });
-        }
-
-        newSubstate = "puzzle";
-
-        await new Promise((r) => setTimeout(r, 600));
-
-        const buttonUrl = newPhase === 5 ? `${BASE_URL}/revelation/` : `${BASE_URL}/app/?phase=${newPhase}`;
-        const buttonText = newPhase === 5 ? "🌈 Open the Terminal of Repairs" : `✨ Próximo Enigma`;
-        const buttonCaption = newPhase === 5 ? "🦤 The Terminal of Repairs is open. Step in." : "🦤 Próximo enigma destrancado.";
-        await bot.sendMessage(chatId, buttonCaption, {
-          reply_markup: { inline_keyboard: [[{ text: buttonText, web_app: { url: buttonUrl } }]] },
-        });
-      } else if (state.phase === 5) {
-        newSubstate = "free_chat";
-      }
-
       await setState(userId, {
-        phase: newPhase,
-        substate: newSubstate,
+        phase: state.phase,
+        substate: state.substate,
         history: history,
         summary: currentSummary,
+        chatId,
       });
 
       return res.status(200).json({ ok: true });
