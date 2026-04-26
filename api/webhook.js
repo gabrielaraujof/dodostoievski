@@ -103,7 +103,7 @@ async function burstToTelegram(chatId, userMessage, userMsgId, state) {
 }
 
 // ─── Handler principal ────────────────────────────────────────────────────
-export default async function handler(req, res) {
+export default async function handler(req, res, context) {
   if (req.method !== "POST") {
     return res.status(200).json({ ok: true, message: "Dostoiévski aguarda. 🦤" });
   }
@@ -119,11 +119,6 @@ export default async function handler(req, res) {
     const update = req.body;
 
     // ── Dedup de updates do Telegram ────────────────────────────────────
-    // Telegram reentrega o mesmo update se a resposta passa do timeout (~10s).
-    // Cada update traz um update_id único; usamos Upstash com SETNX+TTL para
-    // garantir que cada update seja processado exatamente uma vez na janela
-    // de retry (~5 min). Se for um retry, retorna 200 imediatamente para o
-    // Telegram parar de tentar.
     if (!(await claimUpdate(update.update_id))) {
       console.log(`[dedup] skipping duplicate update_id=${update.update_id}`);
       return res.status(200).json({ ok: true, deduped: true });
@@ -159,10 +154,6 @@ export default async function handler(req, res) {
       };
       await setState(userId, startState);
 
-      // Abertura dinâmica em duas partes:
-      // 1) Boas-vindas + apresentação da jornada (sem mencionar o primeiro encontro)
-      // 2) Foto do Thai-Tai como cenário do primeiro enigma
-      // 3) Provocação do primeiro enigma (Fase 1)
       const openingSignal = `[SINAL DE ABERTURA: ${userName} acabou de invocar você com /start. ` +
         `Em 3-4 bolhas curtas, dê as boas-vindas com seu sarcasmo de Dodo erudito. ` +
         `ESTABELEÇA o formato da jornada com clareza: ela vai atravessar uma sequência de enigmas encadeados — cada acerto abre o próximo, e ao final do percurso há algo material esperando por ela. NÃO revele quantos enigmas existem, nem do que tratam. NÃO use as palavras "presente" nem "aniversário" — apenas insinue que algo a aguarda no fim. ` +
@@ -172,14 +163,12 @@ export default async function handler(req, res) {
 
       const openingResponse = await burstToTelegram(chatId, openingSignal, null, startState);
 
-      // Foto define o cenário do primeiro enigma — entra DEPOIS das boas-vindas.
       if (THAI_TAI_PHOTO) {
         await new Promise(r => setTimeout(r, 800));
         await bot.sendPhoto(chatId, THAI_TAI_PHOTO, { caption: "🦤" }).catch(() => {});
         await new Promise(r => setTimeout(r, 300));
       }
 
-      // Sinal do primeiro enigma: a Fase 1 começa aqui, não no opener.
       const phase1Signal = `[SINAL DE ENIGMA FASE 1: É hora de provocar a usuária sobre o primeiro encontro de vocês em São Paulo. ` +
         `Em 2-3 bolhas curtas, em primeira pessoa, no seu tom ácido habitual, convide-a a relembrar qualquer detalhe daquela noite — o restaurante tailandês, o prato ardido, ou a confeitaria famosa que estava fechada. Qualquer um dos três entra como pista de partida. ` +
         `NÃO entregue nomes próprios. NÃO afirme que ela acertou nada — ela ainda nem respondeu.]`;
@@ -189,7 +178,6 @@ export default async function handler(req, res) {
         history: [{ role: "assistant", content: openingResponse }],
       });
 
-      // Persiste as duas falas para manter continuidade nos próximos turnos.
       await setState(userId, {
         ...startState,
         history: [
@@ -224,13 +212,13 @@ export default async function handler(req, res) {
       const newState = { ...state, phase: newPhase, substate: "puzzle", puzzleSignalSent: false };
       await setState(userId, newState);
 
-      // ── Responde 200 imediatamente para o Telegram não reenviar o update ──
-      // O processamento pesado (LLM + Telegram) continua em background.
+      // ── Responde 200 imediatamente; background mantido vivo pelo waitUntil ──
       res.status(200).json({ ok: true });
 
-      if (state.chatId) {
+      context.waitUntil((async () => {
         try {
-          // Dodo parabeniza pelo conhecimento musical russo (Alexander Serov) e transiciona.
+          if (!state.chatId) return;
+
           await burstToTelegram(
             state.chatId,
             "[SINAL: A usuária acertou o quiz musical — identificou Alexander Serov como o intérprete de 'Я люблю тебя до слёз'. Reconheça em 1-2 bolhas curtas, no seu tom ácido, que ela conhece a voz russa certa. NÃO comente sobre a palavra 'lágrimas' (já tratado na fase anterior). NÃO recapitule a Fase 1 (Tom Yum, padaria, Augusta). Apenas costure rapidamente para o próximo enigma técnico que vem a seguir.]",
@@ -238,7 +226,6 @@ export default async function handler(req, res) {
             newState
           );
 
-          // Se a próxima fase tem poll, dispara imediatamente
           if (nextPhase.advanceType === "poll") {
             await new Promise(r => setTimeout(r, 600));
             await bot.sendPoll(state.chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
@@ -248,7 +235,6 @@ export default async function handler(req, res) {
               explanation: "Dostoiévski sabia. Você deveria também. 🦤",
             });
           } else if (nextPhase.puzzleSignal || nextPhase.puzzleSignalPre) {
-            // Idempotência: só dispara se o sinal ainda não foi enviado
             const freshState = await getState(userId);
             if (!freshState.puzzleSignalSent) {
               await setState(userId, { ...freshState, puzzleSignalSent: true });
@@ -257,9 +243,9 @@ export default async function handler(req, res) {
             }
           }
         } catch (e) {
-          console.error("[poll_answer] background dispatch error:", e);
+          console.error("[poll_answer] waitUntil error:", e);
         }
-      }
+      })());
 
       return;
     }
@@ -283,11 +269,7 @@ export default async function handler(req, res) {
       const state = await getState(userId);
 
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      // Validação via LLM ANTES do conversacional. Para qualquer fase em
-      // substate "puzzle" com expectedAnswer definida, um modelo robusto
-      // (gemini-pro-latest) decide se a mensagem contém a resposta esperada.
-      // Se sim, avançamos no mesmo turno sem chamar o LLM conversacional —
-      // assim evitamos rejeições alucinadas e re-entrega de fases passadas.
+      // Validação via LLM ANTES do conversacional.
       // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       const currentPhase = getPhase(state.phase);
       if (state.substate === "puzzle" && currentPhase.expectedAnswer) {
@@ -311,60 +293,56 @@ export default async function handler(req, res) {
           };
           await setState(userId, advancedState);
 
-          // ── Responde 200 imediatamente para o Telegram não reenviar o update ──
+          // ── Responde 200 imediatamente; background mantido vivo pelo waitUntil ──
           res.status(200).json({ ok: true });
 
-          try {
-            if (nextPhase.advanceType === "poll") {
-              // Bridge LLM antes da poll pra costurar a transição (cento → cantor).
-              if (nextPhase.transitionSignal) {
-                await burstToTelegram(chatId, nextPhase.transitionSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
+          context.waitUntil((async () => {
+            try {
+              if (nextPhase.advanceType === "poll") {
+                if (nextPhase.transitionSignal) {
+                  await burstToTelegram(chatId, nextPhase.transitionSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
+                  await new Promise(r => setTimeout(r, 500));
+                } else {
+                  await new Promise(r => setTimeout(r, 600));
+                }
+                await bot.sendPoll(chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
+                  type: "quiz",
+                  correct_option_id: nextPhase.correctOptionId,
+                  is_anonymous: false,
+                  explanation: "Dostoiévski sabia. Você deveria também. 🦤",
+                });
+              } else if (nextPhase.puzzleSignal || nextPhase.puzzleSignalPre) {
+                const freshState = await getState(userId);
+                if (!freshState.puzzleSignalSent) {
+                  await setState(userId, { ...freshState, puzzleSignalSent: true });
+                  await new Promise(r => setTimeout(r, 600));
+                  await dispatchPuzzleSignal(chatId, nextPhase, { ...state, phase: newPhase, substate: "puzzle" });
+                }
+              } else if (nextPhase.advanceType === "webapp") {
+                if (nextPhase.transitionSignal) {
+                  await burstToTelegram(chatId, nextPhase.transitionSignal, null, { ...state, phase: newPhase, substate: "chat" });
+                  await new Promise(r => setTimeout(r, 500));
+                } else {
+                  await new Promise(r => setTimeout(r, 600));
+                }
+                await bot.sendMessage(chatId, "`TOMYUM`\n`SLEZY`\n`KOT`", { parse_mode: "Markdown" });
                 await new Promise(r => setTimeout(r, 500));
-              } else {
-                await new Promise(r => setTimeout(r, 600));
+                await bot.sendMessage(chatId, "🦤 The Terminal of Repairs is open. Step in.", {
+                  reply_markup: {
+                    inline_keyboard: [[{ text: "🌈 Open the Terminal of Repairs", web_app: { url: `${BASE_URL}/revelation/` } }]],
+                  },
+                });
               }
-              await bot.sendPoll(chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
-                type: "quiz",
-                correct_option_id: nextPhase.correctOptionId,
-                is_anonymous: false,
-                explanation: "Dostoiévski sabia. Você deveria também. 🦤",
-              });
-            } else if (nextPhase.puzzleSignal || nextPhase.puzzleSignalPre) {
-              // Idempotência: só dispara se o sinal ainda não foi enviado
-              const freshState = await getState(userId);
-              if (!freshState.puzzleSignalSent) {
-                await setState(userId, { ...freshState, puzzleSignalSent: true });
-                await new Promise(r => setTimeout(r, 600));
-                await dispatchPuzzleSignal(chatId, nextPhase, { ...state, phase: newPhase, substate: "puzzle" });
-              }
-            } else if (nextPhase.advanceType === "webapp") {
-              // Fechamento simbólico LLM antes do botão do Terminal de Reparações.
-              if (nextPhase.transitionSignal) {
-                await burstToTelegram(chatId, nextPhase.transitionSignal, null, { ...state, phase: newPhase, substate: "chat" });
-                await new Promise(r => setTimeout(r, 500));
-              } else {
-                await new Promise(r => setTimeout(r, 600));
-              }
-              // Bolha determinística com os 3 códigos verbatim, formato Markdown
-              // garantido pelo servidor — não dependemos do LLM acertar crases.
-              await bot.sendMessage(chatId, "`TOMYUM`\n`SLEZY`\n`KOT`", { parse_mode: "Markdown" });
-              await new Promise(r => setTimeout(r, 500));
-              await bot.sendMessage(chatId, "🦤 The Terminal of Repairs is open. Step in.", {
-                reply_markup: {
-                  inline_keyboard: [[{ text: "🌈 Open the Terminal of Repairs", web_app: { url: `${BASE_URL}/revelation/` } }]],
-                },
-              });
+            } catch (e) {
+              console.error("[message] waitUntil error:", e);
             }
-          } catch (e) {
-            console.error("[message] background dispatch error:", e);
-          }
+          })());
 
           return;
         }
       }
 
-      // Não acertou (ou fase sem expectedAnswer): roda LLM conversacional pra
-      // dar pistas, provocar, ou conversar livremente.
+      // Não acertou: roda LLM conversacional.
       const aiResponse = await burstToTelegram(chatId, userMessage, userMsgId, state);
 
       let history = [
