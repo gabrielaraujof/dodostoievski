@@ -20,6 +20,23 @@ const VALID_REACTION_EMOJIS = new Set([
   "🥲","🤝","🎁"
 ]);
 
+// ─── Normaliza string para casamento de respostas (lowercase + sem diacríticos) ───
+function normalizeAnswer(s) {
+  return (s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+// ─── Verifica se a mensagem da usuária bate com algum padrão esperado da fase ───
+function matchesExpectedAnswer(message, patterns) {
+  if (!patterns || patterns.length === 0) return false;
+  const cyrillic = (message || "").toLowerCase();
+  const stripped = normalizeAnswer(message);
+  for (const raw of patterns) {
+    const re = new RegExp(raw, "i");
+    if (re.test(cyrillic) || re.test(stripped)) return true;
+  }
+  return false;
+}
+
 // ─── Extrai reação e texto limpo de uma bolha ─────────────────────────────
 function parseReaction(bubbleText) {
   const match = bubbleText.match(/\[REAÇÃO:\s*([^\]]+)\]/i);
@@ -276,6 +293,56 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
+      // Fase 2 no substate puzzle (cento poliglota): casamento determinístico
+      // por padrão. Se ela mencionou a palavra-chave em qualquer idioma, avança
+      // direto para a Fase 3 (sem precisar de turno extra de chat).
+      if (state.phase === 2 && state.substate === "puzzle") {
+        const phase = getPhase(state.phase);
+        const solved = matchesExpectedAnswer(userMessage, phase.expectedAnswerPatterns);
+
+        const updatedHistory = [
+          ...state.history,
+          { role: "user", content: userMessage },
+          { role: "assistant", content: aiResponse },
+        ].slice(-12);
+
+        if (!solved) {
+          await setState(userId, {
+            ...state,
+            chatId,
+            history: updatedHistory,
+            summary: state.summary || "",
+          });
+          return res.status(200).json({ ok: true });
+        }
+
+        // Acertou: avança para Fase 3 e dispara o próximo enigma se for poll
+        const newPhase = state.phase + 1;
+        const nextPhase = getPhase(newPhase);
+
+        if (nextPhase.advanceType === "poll") {
+          await new Promise(r => setTimeout(r, 1500));
+          await bot.sendPoll(chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
+            type: "quiz",
+            correct_option_id: nextPhase.correctOptionId,
+            is_anonymous: false,
+            explanation: "Dostoiévski sabia. Você deveria também. 🦤",
+          });
+        } else if (nextPhase.puzzleIntro) {
+          await new Promise(r => setTimeout(r, 1500));
+          await bot.sendMessage(chatId, nextPhase.puzzleIntro, { parse_mode: "Markdown" });
+        }
+
+        await setState(userId, {
+          phase: newPhase,
+          substate: "puzzle",
+          chatId,
+          history: updatedHistory,
+          summary: state.summary || "",
+        });
+        return res.status(200).json({ ok: true });
+      }
+
       const advance = await shouldAdvancePhase(userMessage, aiResponse, state);
 
       let history = [
@@ -301,6 +368,20 @@ export default async function handler(req, res) {
 
         const nextPhase = getPhase(newPhase);
 
+        // Próxima fase tem um enigma textual fixo (ex: cento poliglota da Fase 2)
+        if (nextPhase.puzzleIntro) {
+          await new Promise(r => setTimeout(r, 1500));
+          await bot.sendMessage(chatId, nextPhase.puzzleIntro, { parse_mode: "Markdown" });
+          await setState(userId, {
+            phase: newPhase,
+            substate: "puzzle",
+            history: history,
+            summary: currentSummary,
+            chatId: chatId,
+          });
+          return res.status(200).json({ ok: true });
+        }
+
         if (nextPhase.advanceType === "poll") {
           await new Promise(r => setTimeout(r, 1200));
           await bot.sendPoll(chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
@@ -312,8 +393,8 @@ export default async function handler(req, res) {
           await setState(userId, {
             phase: newPhase,
             substate: "puzzle",
-            history: state.history,
-            summary: state.summary || "",
+            history: history,
+            summary: currentSummary,
             chatId: chatId,
           });
           return res.status(200).json({ ok: true });
