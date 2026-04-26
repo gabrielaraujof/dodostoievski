@@ -364,7 +364,7 @@ export default async function handler(req, res) {
             [{ text: "🚗 Porta-luvas do Carro", callback_data: "wrong_phase_4_car" }],
             [{ text: "👜 Dentro da Bolsa", callback_data: "solve_phase_4_purse" }]
           ];
-          await bot.sendMessage(chatId, "*Dostoiévski pergunta:* Como você finalmente garantiu que os fones estariam com você para o conserto?", {
+          await bot.sendMessage(chatId, "*Dostoiévski pergunta:* Onde você finalmente decidiu guardar aquilo silenciado para não esquecer de levá-lo ao conserto?", {
             parse_mode: "Markdown",
             reply_markup: { inline_keyboard }
           });
