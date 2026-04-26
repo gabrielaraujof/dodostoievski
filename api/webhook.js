@@ -166,7 +166,7 @@ export default async function handler(req, res) {
       const openingSignal = `[SINAL DE ABERTURA: ${userName} acabou de invocar você com /start. ` +
         `Em 3-4 bolhas curtas, dê as boas-vindas com seu sarcasmo de Dodo erudito. ` +
         `ESTABELEÇA o formato da jornada com clareza: ela vai atravessar uma sequência de enigmas encadeados — cada acerto abre o próximo, e ao final do percurso há algo material esperando por ela. NÃO revele quantos enigmas existem, nem do que tratam. NÃO use as palavras "presente" nem "aniversário" — apenas insinue que algo a aguarda no fim. ` +
-        `NÃO mencione ainda nada sobre o primeiro encontro de vocês em São Paulo — esse é o próximo passo, não este. Termine apenas anunciando, com seu tom ácido, que o primeiro enigma está prestes a começar. ` +
+        `NÃO mencione ainda nada sobre o primeiro encontro dela com o namorado em São Paulo — esse é o próximo passo, não este. Termine apenas anunciando, com seu tom ácido, que o primeiro enigma está prestes a começar. ` +
         `NÃO afirme que ela acertou nada — ela ainda nem respondeu. ` +
         `Esta resposta é EXCEÇÃO ao cap de 40 palavras: priorize estabelecer a jornada com clareza sobre brevidade aqui.]`;
 
@@ -180,8 +180,9 @@ export default async function handler(req, res) {
       }
 
       // Sinal do primeiro enigma: a Fase 1 começa aqui, não no opener.
-      const phase1Signal = `[SINAL DE ENIGMA FASE 1: É hora de provocar a usuária sobre o primeiro encontro de vocês em São Paulo. ` +
+      const phase1Signal = `[SINAL DE ENIGMA FASE 1: É hora de provocar a usuária sobre o primeiro encontro dela com o namorado, em São Paulo. ` +
         `Em 2-3 bolhas curtas, em primeira pessoa, no seu tom ácido habitual, convide-a a relembrar qualquer detalhe daquela noite — o restaurante tailandês, o prato ardido, ou a confeitaria famosa que estava fechada. Qualquer um dos três entra como pista de partida. ` +
+        `LEMBRETE: você NÃO estava lá. Foi ela e o namorado dela. NUNCA use "tivemos", "fomos", "nos obrigou", "improvisamos" — sempre segunda pessoa ("vocês", "ela e ele", "tu e o teu acompanhante"). ` +
         `NÃO entregue nomes próprios. NÃO afirme que ela acertou nada — ela ainda nem respondeu.]`;
 
       const phase1Response = await burstToTelegram(chatId, phase1Signal, null, {
