@@ -42,6 +42,51 @@ function parseReaction(bubbleText) {
   return { emoji: validEmoji, text };
 }
 
+// ─── Resolve a fonte da imagem do poll ────────────────────────────────────
+// Precedência: variável de ambiente (file_id ou URL absoluta) > phase.pollImage
+// (URL absoluta ou caminho relativo servido pelo próprio app).
+function resolvePollImage(phase, baseUrl) {
+  const envValue = phase.pollImageEnvVar ? process.env[phase.pollImageEnvVar] : "";
+  const raw = (envValue || phase.pollImage || "").trim();
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (raw.startsWith("/")) return baseUrl ? `${baseUrl}${raw}` : "";
+  // Telegram file_id (sem scheme) — devolvido como está
+  return raw;
+}
+
+// ─── Envia a pergunta de quiz acompanhada da imagem temática ──────────────
+async function sendPhasePoll(chatId, phase, baseUrl) {
+  const pollOptions = {
+    type: "quiz",
+    correct_option_id: phase.correctOptionId,
+    is_anonymous: false,
+    explanation: "Dostoiévski sabia. Você deveria também. 🦤",
+  };
+  if (phase.pollDescription) {
+    pollOptions.description = phase.pollDescription;
+  }
+
+  const photo = resolvePollImage(phase, baseUrl);
+  if (photo) {
+    try {
+      const caption = phase.pollImageCaption || "";
+      const sentPhoto = await bot.sendPhoto(chatId, photo, {
+        caption,
+        parse_mode: caption ? "Markdown" : undefined,
+      });
+      if (sentPhoto?.message_id) {
+        pollOptions.reply_to_message_id = sentPhoto.message_id;
+        pollOptions.allow_sending_without_reply = true;
+      }
+    } catch (e) {
+      console.warn("Poll image send failed, falling back to text-only poll:", e.message);
+    }
+  }
+
+  return bot.sendPoll(chatId, phase.pollQuestion, phase.pollOptions, pollOptions);
+}
+
 // ─── Reage à mensagem do usuário ──────────────────────────────────────────
 async function reactToMessage(chatId, messageId, emoji) {
   if (!emoji || !messageId) return;
@@ -198,12 +243,7 @@ export default async function handler(req, res) {
         // Se a próxima fase também tem poll, envia imediatamente
         if (nextPhase.advanceType === "poll") {
           await new Promise(r => setTimeout(r, 2000));
-          await bot.sendPoll(state.chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
-            type: "quiz",
-            correct_option_id: nextPhase.correctOptionId,
-            is_anonymous: false,
-            explanation: "Dostoiévski sabia. Você deveria também. 🦤",
-          });
+          await sendPhasePoll(state.chatId, nextPhase, BASE_URL);
         }
       }
 
@@ -300,12 +340,7 @@ export default async function handler(req, res) {
 
         if (nextPhase.advanceType === "poll") {
           await new Promise(r => setTimeout(r, 1200));
-          await bot.sendPoll(chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
-            type: "quiz",
-            correct_option_id: nextPhase.correctOptionId,
-            is_anonymous: false,
-            explanation: "Dostoiévski sabia. Você deveria também. 🦤",
-          });
+          await sendPhasePoll(chatId, nextPhase, BASE_URL);
           await setState(userId, {
             phase: newPhase,
             substate: "puzzle",
