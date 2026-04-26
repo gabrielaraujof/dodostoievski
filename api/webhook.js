@@ -167,10 +167,12 @@ export default async function handler(req, res) {
       // Abertura dinâmica: o LLM escreve as boas-vindas em bolhas, usando o
       // contexto da Fase 1 (system prompt) para provocar sobre o primeiro encontro.
       const openingSignal = `[SINAL DE ABERTURA: ${userName} acabou de invocar você com /start. ` +
-        `Dê as boas-vindas com seu sarcasmo de Dodo erudito. ` +
-        `Anuncie que os enigmas começaram. ` +
-        `Provoque-a sobre o primeiro encontro de vocês em São Paulo (sem entregar nomes). ` +
-        `Termine convidando-a a relembrar aquela noite — qualquer detalhe basta para começar: o restaurante tailandês, o prato ardido, ou a confeitaria famosa que estava fechada. NÃO afirme que ela acertou nada — ela ainda nem respondeu.]`;
+        `Em 4-6 bolhas curtas, dê as boas-vindas com seu sarcasmo de Dodo erudito. ` +
+        `ESTABELEÇA o formato da jornada com clareza: ela vai atravessar uma sequência de enigmas encadeados — cada acerto abre o próximo, e ao final do percurso há algo material esperando por ela. NÃO revele quantos enigmas existem, nem do que tratam. NÃO use as palavras "presente" nem "aniversário" — apenas insinue que algo a aguarda no fim. ` +
+        `Em seguida, provoque-a sobre o primeiro encontro de vocês em São Paulo (sem entregar nomes próprios). ` +
+        `Termine convidando-a a relembrar aquela noite — qualquer detalhe basta para começar: o restaurante tailandês, o prato ardido, ou a confeitaria famosa que estava fechada. ` +
+        `NÃO afirme que ela acertou nada — ela ainda nem respondeu. ` +
+        `Esta resposta é EXCEÇÃO ao cap de 40 palavras: priorize estabelecer a jornada com clareza sobre brevidade aqui.]`;
 
       const openingResponse = await burstToTelegram(chatId, openingSignal, null, startState);
 
@@ -314,9 +316,9 @@ export default async function handler(req, res) {
         } else if (nextPhase.advanceType === "webapp") {
           // Fase final: botão do Terminal de Reparações
           await new Promise(r => setTimeout(r, 1500));
-          await bot.sendMessage(chatId, "↓", {
+          await bot.sendMessage(chatId, "🦤 Three codes secured. One terminal awaits.", {
             reply_markup: {
-              inline_keyboard: [[{ text: "🌈 Revelação Final", web_app: { url: `${BASE_URL}/revelation/` } }]],
+              inline_keyboard: [[{ text: "🌈 Open the Terminal of Repairs", web_app: { url: `${BASE_URL}/revelation/` } }]],
             },
           });
         }
@@ -393,8 +395,9 @@ export default async function handler(req, res) {
         await new Promise((r) => setTimeout(r, 1200));
 
         const buttonUrl = newPhase === 5 ? `${BASE_URL}/revelation/` : `${BASE_URL}/app/?phase=${newPhase}`;
-        const buttonText = newPhase === 5 ? "🌈 Revelação Final" : `✨ Próximo Enigma`;
-        await bot.sendMessage(chatId, "↓", {
+        const buttonText = newPhase === 5 ? "🌈 Open the Terminal of Repairs" : `✨ Próximo Enigma`;
+        const buttonCaption = newPhase === 5 ? "🦤 Three codes secured. One terminal awaits." : "🦤 Próximo enigma destrancado.";
+        await bot.sendMessage(chatId, buttonCaption, {
           reply_markup: { inline_keyboard: [[{ text: buttonText, web_app: { url: buttonUrl } }]] },
         });
       } else if (state.phase === 5) {
