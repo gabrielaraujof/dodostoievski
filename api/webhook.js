@@ -1,6 +1,6 @@
 import TelegramBot from "node-telegram-bot-api";
 import { waitUntil } from "@vercel/functions";
-import { getState, setState, resetState, claimUpdate } from "../lib/state.js";
+import { getState, setState, resetState, claimUpdate, claimPhaseDispatch } from "../lib/state.js";
 import { generateResponse, shouldAdvancePhase, summarizeHistory, validateAnswer } from "../lib/gemini.js";
 import { getPhase } from "../lib/phases.js";
 
@@ -49,15 +49,25 @@ async function reactToMessage(chatId, messageId, emoji) {
   }
 }
 
+// ─── Bolha determinística da cifra (Fase 4) ────────────────────────────────
+// Conteúdo COMPLETO da fase técnica: mecanismo + cifra + comando. O LLM dos
+// sinais pré/pós só faz flavor curto sem qualquer referência a cifra ou
+// decodificação. Isso impede o Gemini Flash de hallucinate `BOFREIR GUR PNG`
+// a partir do prompt (token presente em training data por ser repo público).
+const PHASE4_CIPHER_BUBBLE =
+  "Rotate each letter by exactly half of the Latin alphabet:\n\n" +
+  "`BOFREIR GUR PNG`\n\n" +
+  "Obey what it tells you. Name the subject — Cyrillic earns points.";
+
 // ─── Despacho de enigma com cifra determinística (Fase 4) ─────────────────
-// Phase 4 splits the puzzle signal in two: pre-cipher framing, then a
-// deterministic cipher bubble injected by the server, then post-cipher
-// command. Resolves LLM tendency to repeat the cipher token across bubbles.
+// Phase 4: pre-flavor (LLM, 8 palavras max, sem contexto de cifra),
+// deterministic mechanism+cipher+command bubble (servidor),
+// post-flavor (LLM, 8 palavras max, sem contexto de cifra).
 async function dispatchPuzzleSignal(chatId, nextPhase, llmStateContext) {
   if (nextPhase.puzzleSignalPre && nextPhase.puzzleSignalPost) {
     await burstToTelegram(chatId, nextPhase.puzzleSignalPre, null, llmStateContext);
     await new Promise(r => setTimeout(r, 400));
-    await bot.sendMessage(chatId, "`BOFREIR GUR PNG`", { parse_mode: "Markdown" });
+    await bot.sendMessage(chatId, PHASE4_CIPHER_BUBBLE, { parse_mode: "Markdown" });
     await new Promise(r => setTimeout(r, 400));
     await burstToTelegram(chatId, nextPhase.puzzleSignalPost, null, llmStateContext);
   } else if (nextPhase.puzzleSignal) {
@@ -210,7 +220,7 @@ export default async function handler(req, res) {
       // Acertou: avança para a próxima fase
       const newPhase = state.phase + 1;
       const nextPhase = getPhase(newPhase);
-      const newState = { ...state, phase: newPhase, substate: "puzzle", puzzleSignalSent: false };
+      const newState = { ...state, phase: newPhase, substate: "puzzle" };
       await setState(userId, newState);
 
       // ── Responde 200 imediatamente; background mantido vivo pelo waitUntil ──
@@ -236,9 +246,9 @@ export default async function handler(req, res) {
               explanation: "Dostoiévski sabia. Você deveria também. 🦤",
             });
           } else if (nextPhase.puzzleSignal || nextPhase.puzzleSignalPre) {
-            const freshState = await getState(userId);
-            if (!freshState.puzzleSignalSent) {
-              await setState(userId, { ...freshState, puzzleSignalSent: true });
+            // Lock atômico Redis: garante que o despacho rode no máximo 1x
+            // por usuário/fase, mesmo se houver invocações concorrentes.
+            if (await claimPhaseDispatch(userId, newPhase)) {
               await new Promise(r => setTimeout(r, 600));
               await dispatchPuzzleSignal(state.chatId, nextPhase, newState);
             }
@@ -290,7 +300,6 @@ export default async function handler(req, res) {
             chatId,
             history: updatedHistory,
             summary: state.summary || "",
-            puzzleSignalSent: false,
           };
           await setState(userId, advancedState);
 
@@ -313,9 +322,9 @@ export default async function handler(req, res) {
                   explanation: "Dostoiévski sabia. Você deveria também. 🦤",
                 });
               } else if (nextPhase.puzzleSignal || nextPhase.puzzleSignalPre) {
-                const freshState = await getState(userId);
-                if (!freshState.puzzleSignalSent) {
-                  await setState(userId, { ...freshState, puzzleSignalSent: true });
+                // Lock atômico Redis: garante que o despacho rode no máximo 1x
+                // por usuário/fase, mesmo se houver invocações concorrentes.
+                if (await claimPhaseDispatch(userId, newPhase)) {
                   await new Promise(r => setTimeout(r, 600));
                   await dispatchPuzzleSignal(chatId, nextPhase, { ...state, phase: newPhase, substate: "puzzle" });
                 }
