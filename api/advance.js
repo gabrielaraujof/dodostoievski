@@ -98,7 +98,7 @@ export default async function handler(req, res) {
 
       // Tempo de digitação reduzido para evitar timeout do Vercel e fechar o Mini App rápido
       await bot.sendChatAction(userId, "typing");
-      const typingDelay = Math.min(Math.max(text.length * 15, 500), 1200);
+      const typingDelay = Math.min(Math.max(text.length * 6, 200), 600);
       await new Promise(r => setTimeout(r, typingDelay));
 
       let sent;
