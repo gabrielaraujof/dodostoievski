@@ -48,17 +48,60 @@ async function reactToMessage(chatId, messageId, emoji) {
   }
 }
 
+// ─── Filtra cifra/decodificação que o LLM possa ter colocado inline ─────
+// Mesmo com instruções explícitas no signal, o LLM às vezes reproduz
+// `BOFREIR GUR PNG` ou `OBSERVE THE CAT` no texto. Filtragem garante que
+// essas strings nunca cheguem ao usuário fora da bolha determinística.
+function filterCipherTokens(text) {
+  return text
+    .replace(/\bBOFREIR\s+GUR\s+PNG\b/gi, "the message above")
+    .replace(/\bOBSERVE\s+THE\s+CAT\b/gi, "what it tells you to do");
+}
+
+// ─── Envia UMA ÚNICA bolha gerada pelo LLM (com filtragem) ──────────────
+// Usado nos sinais pré/pós-cifra da Fase 4. Mesmo se o LLM gerar múltiplas
+// bolhas, só a primeira é enviada — garante 1 bolha + sem token vazado.
+async function sendSingleFilteredBubble(chatId, signal, llmStateContext) {
+  const fullRawResponse = await generateResponse(signal, llmStateContext);
+
+  const bubbles = fullRawResponse
+    .split(/[\s\[*]*BOLHA[\s\]*]*/i)
+    .map((b) => b.trim())
+    .filter((b) => b.length > 0);
+
+  if (bubbles.length === 0) return "";
+
+  const { emoji: _emoji, text: rawText } = parseReaction(bubbles[0]);
+  if (!rawText) return "";
+
+  const filtered = filterCipherTokens(rawText);
+  if (!filtered.trim()) return "";
+
+  await bot.sendChatAction(chatId, "typing");
+  const delay = Math.min(Math.max(filtered.length * 6, 200), 600);
+  await new Promise((r) => setTimeout(r, delay));
+
+  try {
+    await bot.sendMessage(chatId, filtered, { parse_mode: "Markdown" });
+  } catch {
+    await bot.sendMessage(chatId, filtered);
+  }
+
+  return filtered;
+}
+
 // ─── Despacho de enigma com cifra determinística (Fase 4) ─────────────────
 // Phase 4 splits the puzzle signal in two: pre-cipher framing, then a
 // deterministic cipher bubble injected by the server, then post-cipher
-// command. Resolves LLM tendency to repeat the cipher token across bubbles.
+// command. Pre/post bubbles are forced to single-bubble and filtered to
+// prevent the cipher/decoded token from leaking inline.
 async function dispatchPuzzleSignal(chatId, nextPhase, llmStateContext) {
   if (nextPhase.puzzleSignalPre && nextPhase.puzzleSignalPost) {
-    await burstToTelegram(chatId, nextPhase.puzzleSignalPre, null, llmStateContext);
+    await sendSingleFilteredBubble(chatId, nextPhase.puzzleSignalPre, llmStateContext);
     await new Promise(r => setTimeout(r, 400));
     await bot.sendMessage(chatId, "`BOFREIR GUR PNG`", { parse_mode: "Markdown" });
     await new Promise(r => setTimeout(r, 400));
-    await burstToTelegram(chatId, nextPhase.puzzleSignalPost, null, llmStateContext);
+    await sendSingleFilteredBubble(chatId, nextPhase.puzzleSignalPost, llmStateContext);
   } else if (nextPhase.puzzleSignal) {
     await burstToTelegram(chatId, nextPhase.puzzleSignal, null, llmStateContext);
   }
