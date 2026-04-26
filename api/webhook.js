@@ -221,35 +221,47 @@ export default async function handler(req, res) {
       // Acertou: avança para a próxima fase
       const newPhase = state.phase + 1;
       const nextPhase = getPhase(newPhase);
-      const newState = { ...state, phase: newPhase, substate: "puzzle" };
+      const newState = { ...state, phase: newPhase, substate: "puzzle", puzzleSignalSent: false };
       await setState(userId, newState);
 
-      if (state.chatId) {
-        // Dodo parabeniza pelo conhecimento musical russo (Alexander Serov) e transiciona.
-        await burstToTelegram(
-          state.chatId,
-          "[SINAL: A usuária acertou o quiz musical — identificou Alexander Serov como o intérprete de 'Я люблю тебя до слёз'. Reconheça em 1-2 bolhas curtas, no seu tom ácido, que ela conhece a voz russa certa. NÃO comente sobre a palavra 'lágrimas' (já tratado na fase anterior). NÃO recapitule a Fase 1 (Tom Yum, padaria, Augusta). Apenas costure rapidamente para o próximo enigma técnico que vem a seguir.]",
-          null,
-          newState
-        );
+      // ── Responde 200 imediatamente para o Telegram não reenviar o update ──
+      // O processamento pesado (LLM + Telegram) continua em background.
+      res.status(200).json({ ok: true });
 
-        // Se a próxima fase tem poll, dispara imediatamente
-        if (nextPhase.advanceType === "poll") {
-          await new Promise(r => setTimeout(r, 600));
-          await bot.sendPoll(state.chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
-            type: "quiz",
-            correct_option_id: nextPhase.correctOptionId,
-            is_anonymous: false,
-            explanation: "Dostoiévski sabia. Você deveria também. 🦤",
-          });
-        } else if (nextPhase.puzzleSignal || nextPhase.puzzleSignalPre) {
-          // Fase com enigma gerado pelo LLM via SINAL (Fase 2 cento, Fase 4 cifra)
-          await new Promise(r => setTimeout(r, 600));
-          await dispatchPuzzleSignal(state.chatId, nextPhase, newState);
+      if (state.chatId) {
+        try {
+          // Dodo parabeniza pelo conhecimento musical russo (Alexander Serov) e transiciona.
+          await burstToTelegram(
+            state.chatId,
+            "[SINAL: A usuária acertou o quiz musical — identificou Alexander Serov como o intérprete de 'Я люблю тебя до слёз'. Reconheça em 1-2 bolhas curtas, no seu tom ácido, que ela conhece a voz russa certa. NÃO comente sobre a palavra 'lágrimas' (já tratado na fase anterior). NÃO recapitule a Fase 1 (Tom Yum, padaria, Augusta). Apenas costure rapidamente para o próximo enigma técnico que vem a seguir.]",
+            null,
+            newState
+          );
+
+          // Se a próxima fase tem poll, dispara imediatamente
+          if (nextPhase.advanceType === "poll") {
+            await new Promise(r => setTimeout(r, 600));
+            await bot.sendPoll(state.chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
+              type: "quiz",
+              correct_option_id: nextPhase.correctOptionId,
+              is_anonymous: false,
+              explanation: "Dostoiévski sabia. Você deveria também. 🦤",
+            });
+          } else if (nextPhase.puzzleSignal || nextPhase.puzzleSignalPre) {
+            // Idempotência: só dispara se o sinal ainda não foi enviado
+            const freshState = await getState(userId);
+            if (!freshState.puzzleSignalSent) {
+              await setState(userId, { ...freshState, puzzleSignalSent: true });
+              await new Promise(r => setTimeout(r, 600));
+              await dispatchPuzzleSignal(state.chatId, nextPhase, newState);
+            }
+          }
+        } catch (e) {
+          console.error("[poll_answer] background dispatch error:", e);
         }
       }
 
-      return res.status(200).json({ ok: true });
+      return;
     }
 
     // ── callback_query (Botões Inline) ───────────────────────────────
@@ -289,50 +301,65 @@ export default async function handler(req, res) {
             { role: "user", content: userMessage },
           ].slice(-12);
 
-          if (nextPhase.advanceType === "poll") {
-            // Bridge LLM antes da poll pra costurar a transição (cento → cantor).
-            if (nextPhase.transitionSignal) {
-              await burstToTelegram(chatId, nextPhase.transitionSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
-              await new Promise(r => setTimeout(r, 500));
-            } else {
-              await new Promise(r => setTimeout(r, 600));
-            }
-            await bot.sendPoll(chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
-              type: "quiz",
-              correct_option_id: nextPhase.correctOptionId,
-              is_anonymous: false,
-              explanation: "Dostoiévski sabia. Você deveria também. 🦤",
-            });
-          } else if (nextPhase.puzzleSignal || nextPhase.puzzleSignalPre) {
-            await new Promise(r => setTimeout(r, 600));
-            await dispatchPuzzleSignal(chatId, nextPhase, { ...state, phase: newPhase, substate: "puzzle" });
-          } else if (nextPhase.advanceType === "webapp") {
-            // Fechamento simbólico LLM antes do botão do Terminal de Reparações.
-            if (nextPhase.transitionSignal) {
-              await burstToTelegram(chatId, nextPhase.transitionSignal, null, { ...state, phase: newPhase, substate: "chat" });
-              await new Promise(r => setTimeout(r, 500));
-            } else {
-              await new Promise(r => setTimeout(r, 600));
-            }
-            // Bolha determinística com os 3 códigos verbatim, formato Markdown
-            // garantido pelo servidor — não dependemos do LLM acertar crases.
-            await bot.sendMessage(chatId, "`TOMYUM`\n`SLEZY`\n`KOT`", { parse_mode: "Markdown" });
-            await new Promise(r => setTimeout(r, 500));
-            await bot.sendMessage(chatId, "🦤 The Terminal of Repairs is open. Step in.", {
-              reply_markup: {
-                inline_keyboard: [[{ text: "🌈 Open the Terminal of Repairs", web_app: { url: `${BASE_URL}/revelation/` } }]],
-              },
-            });
-          }
-
-          await setState(userId, {
+          const advancedState = {
             phase: newPhase,
             substate: nextPhase.advanceType === "webapp" ? "free_chat" : "puzzle",
             chatId,
             history: updatedHistory,
             summary: state.summary || "",
-          });
-          return res.status(200).json({ ok: true });
+            puzzleSignalSent: false,
+          };
+          await setState(userId, advancedState);
+
+          // ── Responde 200 imediatamente para o Telegram não reenviar o update ──
+          res.status(200).json({ ok: true });
+
+          try {
+            if (nextPhase.advanceType === "poll") {
+              // Bridge LLM antes da poll pra costurar a transição (cento → cantor).
+              if (nextPhase.transitionSignal) {
+                await burstToTelegram(chatId, nextPhase.transitionSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
+                await new Promise(r => setTimeout(r, 500));
+              } else {
+                await new Promise(r => setTimeout(r, 600));
+              }
+              await bot.sendPoll(chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
+                type: "quiz",
+                correct_option_id: nextPhase.correctOptionId,
+                is_anonymous: false,
+                explanation: "Dostoiévski sabia. Você deveria também. 🦤",
+              });
+            } else if (nextPhase.puzzleSignal || nextPhase.puzzleSignalPre) {
+              // Idempotência: só dispara se o sinal ainda não foi enviado
+              const freshState = await getState(userId);
+              if (!freshState.puzzleSignalSent) {
+                await setState(userId, { ...freshState, puzzleSignalSent: true });
+                await new Promise(r => setTimeout(r, 600));
+                await dispatchPuzzleSignal(chatId, nextPhase, { ...state, phase: newPhase, substate: "puzzle" });
+              }
+            } else if (nextPhase.advanceType === "webapp") {
+              // Fechamento simbólico LLM antes do botão do Terminal de Reparações.
+              if (nextPhase.transitionSignal) {
+                await burstToTelegram(chatId, nextPhase.transitionSignal, null, { ...state, phase: newPhase, substate: "chat" });
+                await new Promise(r => setTimeout(r, 500));
+              } else {
+                await new Promise(r => setTimeout(r, 600));
+              }
+              // Bolha determinística com os 3 códigos verbatim, formato Markdown
+              // garantido pelo servidor — não dependemos do LLM acertar crases.
+              await bot.sendMessage(chatId, "`TOMYUM`\n`SLEZY`\n`KOT`", { parse_mode: "Markdown" });
+              await new Promise(r => setTimeout(r, 500));
+              await bot.sendMessage(chatId, "🦤 The Terminal of Repairs is open. Step in.", {
+                reply_markup: {
+                  inline_keyboard: [[{ text: "🌈 Open the Terminal of Repairs", web_app: { url: `${BASE_URL}/revelation/` } }]],
+                },
+              });
+            }
+          } catch (e) {
+            console.error("[message] background dispatch error:", e);
+          }
+
+          return;
         }
       }
 
