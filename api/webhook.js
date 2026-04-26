@@ -1,5 +1,5 @@
 import TelegramBot from "node-telegram-bot-api";
-import { getState, setState, resetState } from "../lib/state.js";
+import { getState, setState, resetState, claimUpdate } from "../lib/state.js";
 import { generateResponse, shouldAdvancePhase, summarizeHistory } from "../lib/gemini.js";
 import { getPhase } from "../lib/phases.js";
 
@@ -128,6 +128,17 @@ export default async function handler(req, res) {
 
   try {
     const update = req.body;
+
+    // ── Dedup de updates do Telegram ────────────────────────────────────
+    // Telegram reentrega o mesmo update se a resposta passa do timeout (~10s).
+    // Cada update traz um update_id único; usamos Upstash com SETNX+TTL para
+    // garantir que cada update seja processado exatamente uma vez na janela
+    // de retry (~5 min). Se for um retry, retorna 200 imediatamente para o
+    // Telegram parar de tentar.
+    if (!(await claimUpdate(update.update_id))) {
+      console.log(`[dedup] skipping duplicate update_id=${update.update_id}`);
+      return res.status(200).json({ ok: true, deduped: true });
+    }
 
     // ── /reset ──────────────────────────────────────────────────────────
     if (update.message?.text === "/reset") {
