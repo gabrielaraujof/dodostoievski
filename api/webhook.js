@@ -270,6 +270,58 @@ export default async function handler(req, res) {
       }
       const state = await getState(userId);
 
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      // Casamento determinístico ANTES do LLM. Se a resposta dela bate no
+      // padrão da fase atual (Fase 2 = cento, Fase 4 = cifra), avança no
+      // mesmo turno SEM chamar o LLM — caso contrário o modelo, sem saber
+      // que ela acertou, gera bolhas de rejeição que aparecem antes do
+      // próximo enigma e parecem hallucination.
+      // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      const currentPhase = getPhase(state.phase);
+      if (state.substate === "puzzle" && currentPhase.expectedAnswerPatterns) {
+        const solved = matchesExpectedAnswer(userMessage, currentPhase.expectedAnswerPatterns);
+        if (solved) {
+          const newPhase = state.phase + 1;
+          const nextPhase = getPhase(newPhase);
+
+          const updatedHistory = [
+            ...state.history,
+            { role: "user", content: userMessage },
+          ].slice(-12);
+
+          if (nextPhase.advanceType === "poll") {
+            await new Promise(r => setTimeout(r, 1500));
+            await bot.sendPoll(chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
+              type: "quiz",
+              correct_option_id: nextPhase.correctOptionId,
+              is_anonymous: false,
+              explanation: "Dostoiévski sabia. Você deveria também. 🦤",
+            });
+          } else if (nextPhase.puzzleSignal) {
+            await new Promise(r => setTimeout(r, 1500));
+            await burstToTelegram(chatId, nextPhase.puzzleSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
+          } else if (nextPhase.advanceType === "webapp") {
+            // Fase final: botão do Terminal de Reparações
+            await new Promise(r => setTimeout(r, 1500));
+            await bot.sendMessage(chatId, "🦤 Three codes secured. One terminal awaits.", {
+              reply_markup: {
+                inline_keyboard: [[{ text: "🌈 Open the Terminal of Repairs", web_app: { url: `${BASE_URL}/revelation/` } }]],
+              },
+            });
+          }
+
+          await setState(userId, {
+            phase: newPhase,
+            substate: "puzzle",
+            chatId,
+            history: updatedHistory,
+            summary: state.summary || "",
+          });
+          return res.status(200).json({ ok: true });
+        }
+      }
+
+      // Resposta não bateu no padrão (ou fase sem padrão): roda o LLM normalmente.
       const aiResponse = await burstToTelegram(chatId, userMessage, userMsgId, state);
 
       // Fase 1 no substate puzzle: valida semanticamente se ela reconheceu o contexto
@@ -291,57 +343,16 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
-      // Fases com puzzle baseado em casamento determinístico de resposta
-      // (Fase 2 = cento poliglota / Fase 4 = charada da bolsa). Se ela acertar,
-      // avança no mesmo turno; senão, fica em puzzle.
-      if (state.substate === "puzzle" && getPhase(state.phase).expectedAnswerPatterns) {
-        const phase = getPhase(state.phase);
-        const solved = matchesExpectedAnswer(userMessage, phase.expectedAnswerPatterns);
-
+      // Fases com puzzle determinístico que NÃO acertaram: registra histórico e mantém em puzzle.
+      if (state.substate === "puzzle" && currentPhase.expectedAnswerPatterns) {
         const updatedHistory = [
           ...state.history,
           { role: "user", content: userMessage },
           { role: "assistant", content: aiResponse },
         ].slice(-12);
 
-        if (!solved) {
-          await setState(userId, {
-            ...state,
-            chatId,
-            history: updatedHistory,
-            summary: state.summary || "",
-          });
-          return res.status(200).json({ ok: true });
-        }
-
-        // Acertou: avança para a próxima fase e dispara o próximo enigma
-        const newPhase = state.phase + 1;
-        const nextPhase = getPhase(newPhase);
-
-        if (nextPhase.advanceType === "poll") {
-          await new Promise(r => setTimeout(r, 1500));
-          await bot.sendPoll(chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
-            type: "quiz",
-            correct_option_id: nextPhase.correctOptionId,
-            is_anonymous: false,
-            explanation: "Dostoiévski sabia. Você deveria também. 🦤",
-          });
-        } else if (nextPhase.puzzleSignal) {
-          await new Promise(r => setTimeout(r, 1500));
-          await burstToTelegram(chatId, nextPhase.puzzleSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
-        } else if (nextPhase.advanceType === "webapp") {
-          // Fase final: botão do Terminal de Reparações
-          await new Promise(r => setTimeout(r, 1500));
-          await bot.sendMessage(chatId, "🦤 Three codes secured. One terminal awaits.", {
-            reply_markup: {
-              inline_keyboard: [[{ text: "🌈 Open the Terminal of Repairs", web_app: { url: `${BASE_URL}/revelation/` } }]],
-            },
-          });
-        }
-
         await setState(userId, {
-          phase: newPhase,
-          substate: "puzzle",
+          ...state,
           chatId,
           history: updatedHistory,
           summary: state.summary || "",
