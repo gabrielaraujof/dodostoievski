@@ -225,13 +225,9 @@ export default async function handler(req, res) {
             explanation: "Dostoiévski sabia. Você deveria também. 🦤",
           });
         } else if (nextPhase.puzzleSignal) {
-          // Fase com enigma gerado pelo LLM via SINAL (ex: cifra ROT-13 da Fase 4)
+          // Fase com enigma gerado pelo LLM via SINAL (Fase 2 cento, Fase 4 cifra)
           await new Promise(r => setTimeout(r, 2000));
           await burstToTelegram(state.chatId, nextPhase.puzzleSignal, null, newState);
-        } else if (nextPhase.puzzleIntro) {
-          // Fase com enigma textual fixo (legado, ex: cento da Fase 2)
-          await new Promise(r => setTimeout(r, 2000));
-          await bot.sendMessage(state.chatId, nextPhase.puzzleIntro, { parse_mode: "Markdown" });
         }
       }
 
@@ -315,9 +311,6 @@ export default async function handler(req, res) {
         } else if (nextPhase.puzzleSignal) {
           await new Promise(r => setTimeout(r, 1500));
           await burstToTelegram(chatId, nextPhase.puzzleSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
-        } else if (nextPhase.puzzleIntro) {
-          await new Promise(r => setTimeout(r, 1500));
-          await bot.sendMessage(chatId, nextPhase.puzzleIntro, { parse_mode: "Markdown" });
         } else if (nextPhase.advanceType === "webapp") {
           // Fase final: botão do Terminal de Reparações
           await new Promise(r => setTimeout(r, 1500));
@@ -363,24 +356,10 @@ export default async function handler(req, res) {
 
         const nextPhase = getPhase(newPhase);
 
-        // Próxima fase tem um enigma gerado pelo LLM via SINAL (ex: Fase 4)
+        // Próxima fase tem um enigma gerado pelo LLM via SINAL (Fase 2 cento, Fase 4 cifra)
         if (nextPhase.puzzleSignal) {
           await new Promise(r => setTimeout(r, 1500));
           await burstToTelegram(chatId, nextPhase.puzzleSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
-          await setState(userId, {
-            phase: newPhase,
-            substate: "puzzle",
-            history: history,
-            summary: currentSummary,
-            chatId: chatId,
-          });
-          return res.status(200).json({ ok: true });
-        }
-
-        // Próxima fase tem um enigma textual fixo (legado, ex: cento da Fase 2)
-        if (nextPhase.puzzleIntro) {
-          await new Promise(r => setTimeout(r, 1500));
-          await bot.sendMessage(chatId, nextPhase.puzzleIntro, { parse_mode: "Markdown" });
           await setState(userId, {
             phase: newPhase,
             substate: "puzzle",
