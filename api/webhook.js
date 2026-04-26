@@ -48,6 +48,22 @@ async function reactToMessage(chatId, messageId, emoji) {
   }
 }
 
+// ─── Despacho de enigma com cifra determinística (Fase 4) ─────────────────
+// Phase 4 splits the puzzle signal in two: pre-cipher framing, then a
+// deterministic cipher bubble injected by the server, then post-cipher
+// command. Resolves LLM tendency to repeat the cipher token across bubbles.
+async function dispatchPuzzleSignal(chatId, nextPhase, llmStateContext) {
+  if (nextPhase.puzzleSignalPre && nextPhase.puzzleSignalPost) {
+    await burstToTelegram(chatId, nextPhase.puzzleSignalPre, null, llmStateContext);
+    await new Promise(r => setTimeout(r, 400));
+    await bot.sendMessage(chatId, "`BOFREIR GUR PNG`", { parse_mode: "Markdown" });
+    await new Promise(r => setTimeout(r, 400));
+    await burstToTelegram(chatId, nextPhase.puzzleSignalPost, null, llmStateContext);
+  } else if (nextPhase.puzzleSignal) {
+    await burstToTelegram(chatId, nextPhase.puzzleSignal, null, llmStateContext);
+  }
+}
+
 // ─── Envia resposta em burst de bolhas ────────────────────────────────────
 async function burstToTelegram(chatId, userMessage, userMsgId, state) {
   const fullRawResponse = await generateResponse(userMessage, state);
@@ -226,10 +242,10 @@ export default async function handler(req, res) {
             is_anonymous: false,
             explanation: "Dostoiévski sabia. Você deveria também. 🦤",
           });
-        } else if (nextPhase.puzzleSignal) {
+        } else if (nextPhase.puzzleSignal || nextPhase.puzzleSignalPre) {
           // Fase com enigma gerado pelo LLM via SINAL (Fase 2 cento, Fase 4 cifra)
           await new Promise(r => setTimeout(r, 600));
-          await burstToTelegram(state.chatId, nextPhase.puzzleSignal, null, newState);
+          await dispatchPuzzleSignal(state.chatId, nextPhase, newState);
         }
       }
 
@@ -287,9 +303,9 @@ export default async function handler(req, res) {
               is_anonymous: false,
               explanation: "Dostoiévski sabia. Você deveria também. 🦤",
             });
-          } else if (nextPhase.puzzleSignal) {
+          } else if (nextPhase.puzzleSignal || nextPhase.puzzleSignalPre) {
             await new Promise(r => setTimeout(r, 600));
-            await burstToTelegram(chatId, nextPhase.puzzleSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
+            await dispatchPuzzleSignal(chatId, nextPhase, { ...state, phase: newPhase, substate: "puzzle" });
           } else if (nextPhase.advanceType === "webapp") {
             // Fechamento simbólico LLM antes do botão do Terminal de Reparações.
             if (nextPhase.transitionSignal) {
