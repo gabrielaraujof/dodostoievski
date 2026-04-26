@@ -215,7 +215,7 @@ export default async function handler(req, res) {
           newState
         );
 
-        // Se a próxima fase também tem poll, envia imediatamente
+        // Se a próxima fase tem poll, dispara imediatamente
         if (nextPhase.advanceType === "poll") {
           await new Promise(r => setTimeout(r, 2000));
           await bot.sendPoll(state.chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
@@ -224,6 +224,14 @@ export default async function handler(req, res) {
             is_anonymous: false,
             explanation: "Dostoiévski sabia. Você deveria também. 🦤",
           });
+        } else if (nextPhase.puzzleSignal) {
+          // Fase com enigma gerado pelo LLM via SINAL (ex: cifra ROT-13 da Fase 4)
+          await new Promise(r => setTimeout(r, 2000));
+          await burstToTelegram(state.chatId, nextPhase.puzzleSignal, null, newState);
+        } else if (nextPhase.puzzleIntro) {
+          // Fase com enigma textual fixo (legado, ex: cento da Fase 2)
+          await new Promise(r => setTimeout(r, 2000));
+          await bot.sendMessage(state.chatId, nextPhase.puzzleIntro, { parse_mode: "Markdown" });
         }
       }
 
@@ -232,31 +240,7 @@ export default async function handler(req, res) {
 
     // ── callback_query (Botões Inline) ───────────────────────────────
     if (update.callback_query) {
-      const chatId = update.callback_query.message.chat.id;
-      const userId = update.callback_query.from.id;
-      const data = update.callback_query.data;
-
-      const state = await getState(userId);
-
-      if (data === "solve_phase_4_purse") {
-        await bot.answerCallbackQuery(update.callback_query.id, { text: "Strategy validated! 🦤" });
-        await bot.editMessageText("*Purse Strategy:* Validated. You finally stopped forgetting the obvious.", {
-          chat_id: chatId,
-          message_id: update.callback_query.message.message_id,
-          parse_mode: "Markdown"
-        });
-
-        // Avança para o chat da fase 4
-        await setState(userId, { ...state, substate: "chat" });
-        await burstToTelegram(chatId, "[SINAL: O usuário escolheu a Estratégia da Bolsa]", null, { ...state, substate: "chat" });
-        return res.status(200).json({ ok: true });
-      }
-
-      if (data.startsWith("wrong_phase_4")) {
-        await bot.answerCallbackQuery(update.callback_query.id, { text: "Wrong! Try again, human.", show_alert: true });
-        return res.status(200).json({ ok: true });
-      }
-
+      await bot.answerCallbackQuery(update.callback_query.id).catch(() => {});
       return res.status(200).json({ ok: true });
     }
 
@@ -293,10 +277,10 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
-      // Fase 2 no substate puzzle (cento poliglota): casamento determinístico
-      // por padrão. Se ela mencionou a palavra-chave em qualquer idioma, avança
-      // direto para a Fase 3 (sem precisar de turno extra de chat).
-      if (state.phase === 2 && state.substate === "puzzle") {
+      // Fases com puzzle baseado em casamento determinístico de resposta
+      // (Fase 2 = cento poliglota / Fase 4 = charada da bolsa). Se ela acertar,
+      // avança no mesmo turno; senão, fica em puzzle.
+      if (state.substate === "puzzle" && getPhase(state.phase).expectedAnswerPatterns) {
         const phase = getPhase(state.phase);
         const solved = matchesExpectedAnswer(userMessage, phase.expectedAnswerPatterns);
 
@@ -316,7 +300,7 @@ export default async function handler(req, res) {
           return res.status(200).json({ ok: true });
         }
 
-        // Acertou: avança para Fase 3 e dispara o próximo enigma se for poll
+        // Acertou: avança para a próxima fase e dispara o próximo enigma
         const newPhase = state.phase + 1;
         const nextPhase = getPhase(newPhase);
 
@@ -328,9 +312,20 @@ export default async function handler(req, res) {
             is_anonymous: false,
             explanation: "Dostoiévski sabia. Você deveria também. 🦤",
           });
+        } else if (nextPhase.puzzleSignal) {
+          await new Promise(r => setTimeout(r, 1500));
+          await burstToTelegram(chatId, nextPhase.puzzleSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
         } else if (nextPhase.puzzleIntro) {
           await new Promise(r => setTimeout(r, 1500));
           await bot.sendMessage(chatId, nextPhase.puzzleIntro, { parse_mode: "Markdown" });
+        } else if (nextPhase.advanceType === "webapp") {
+          // Fase final: botão do Terminal de Reparações
+          await new Promise(r => setTimeout(r, 1500));
+          await bot.sendMessage(chatId, "↓", {
+            reply_markup: {
+              inline_keyboard: [[{ text: "🌈 Revelação Final", web_app: { url: `${BASE_URL}/revelation/` } }]],
+            },
+          });
         }
 
         await setState(userId, {
@@ -368,7 +363,21 @@ export default async function handler(req, res) {
 
         const nextPhase = getPhase(newPhase);
 
-        // Próxima fase tem um enigma textual fixo (ex: cento poliglota da Fase 2)
+        // Próxima fase tem um enigma gerado pelo LLM via SINAL (ex: Fase 4)
+        if (nextPhase.puzzleSignal) {
+          await new Promise(r => setTimeout(r, 1500));
+          await burstToTelegram(chatId, nextPhase.puzzleSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
+          await setState(userId, {
+            phase: newPhase,
+            substate: "puzzle",
+            history: history,
+            summary: currentSummary,
+            chatId: chatId,
+          });
+          return res.status(200).json({ ok: true });
+        }
+
+        // Próxima fase tem um enigma textual fixo (legado, ex: cento da Fase 2)
         if (nextPhase.puzzleIntro) {
           await new Promise(r => setTimeout(r, 1500));
           await bot.sendMessage(chatId, nextPhase.puzzleIntro, { parse_mode: "Markdown" });
@@ -401,30 +410,14 @@ export default async function handler(req, res) {
         }
 
         newSubstate = "puzzle";
-        const nextPhaseObj = getPhase(newPhase);
 
         await new Promise((r) => setTimeout(r, 1200));
 
-        let inline_keyboard = [];
-        if (newPhase === 4) {
-          // Fase 4 é resolvida no chat com botões
-          inline_keyboard = [
-            [{ text: "💼 Pants Pocket", callback_data: "wrong_phase_4_pocket" }],
-            [{ text: "🚗 Car Glove Compartment", callback_data: "wrong_phase_4_car" }],
-            [{ text: "👜 Inside the Purse", callback_data: "solve_phase_4_purse" }]
-          ];
-          await bot.sendMessage(chatId, "*Dostoiévski asks:* Where did you finally decide to stash that silenced thing so you'd stop forgetting it on the way to repair?", {
-            parse_mode: "Markdown",
-            reply_markup: { inline_keyboard }
-          });
-        } else {
-          const buttonUrl = newPhase === 5 ? `${BASE_URL}/revelation/` : `${BASE_URL}/app/?phase=${newPhase}`;
-          const buttonText = newPhase === 5 ? "🌈 Revelação Final" : `✨ Próximo Enigma`;
-          inline_keyboard = [[{ text: buttonText, web_app: { url: buttonUrl } }]];
-          await bot.sendMessage(chatId, "↓", {
-            reply_markup: { inline_keyboard }
-          });
-        }
+        const buttonUrl = newPhase === 5 ? `${BASE_URL}/revelation/` : `${BASE_URL}/app/?phase=${newPhase}`;
+        const buttonText = newPhase === 5 ? "🌈 Revelação Final" : `✨ Próximo Enigma`;
+        await bot.sendMessage(chatId, "↓", {
+          reply_markup: { inline_keyboard: [[{ text: buttonText, web_app: { url: buttonUrl } }]] },
+        });
       } else if (state.phase === 5) {
         newSubstate = "free_chat";
       }
