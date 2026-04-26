@@ -219,8 +219,8 @@ export default async function handler(req, res) {
       const state = await getState(userId);
 
       if (data === "solve_phase_4_purse") {
-        await bot.answerCallbackQuery(update.callback_query.id, { text: "Estratégia validada! 🦤" });
-        await bot.editMessageText("*Estratégia da Bolsa:* Validada com sucesso. Você finalmente parou de esquecer o óbvio.", {
+        await bot.answerCallbackQuery(update.callback_query.id, { text: "Strategy validated! 🦤" });
+        await bot.editMessageText("*Purse Strategy:* Validated. You finally stopped forgetting the obvious.", {
           chat_id: chatId,
           message_id: update.callback_query.message.message_id,
           parse_mode: "Markdown"
@@ -233,7 +233,7 @@ export default async function handler(req, res) {
       }
 
       if (data.startsWith("wrong_phase_4")) {
-        await bot.answerCallbackQuery(update.callback_query.id, { text: "Errado! Tente novamente, humano.", show_alert: true });
+        await bot.answerCallbackQuery(update.callback_query.id, { text: "Wrong! Try again, human.", show_alert: true });
         return res.status(200).json({ ok: true });
       }
 
@@ -325,11 +325,11 @@ export default async function handler(req, res) {
         if (newPhase === 4) {
           // Fase 4 é resolvida no chat com botões
           inline_keyboard = [
-            [{ text: "💼 Bolso da Calça", callback_data: "wrong_phase_4_pocket" }],
-            [{ text: "🚗 Porta-luvas do Carro", callback_data: "wrong_phase_4_car" }],
-            [{ text: "👜 Dentro da Bolsa", callback_data: "solve_phase_4_purse" }]
+            [{ text: "💼 Pants Pocket", callback_data: "wrong_phase_4_pocket" }],
+            [{ text: "🚗 Car Glove Compartment", callback_data: "wrong_phase_4_car" }],
+            [{ text: "👜 Inside the Purse", callback_data: "solve_phase_4_purse" }]
           ];
-          await bot.sendMessage(chatId, "*Dostoiévski pergunta:* Como você finalmente garantiu que os fones estariam com você para o conserto?", {
+          await bot.sendMessage(chatId, "*Dostoiévski asks:* Where did you finally decide to stash that silenced thing so you'd stop forgetting it on the way to repair?", {
             parse_mode: "Markdown",
             reply_markup: { inline_keyboard }
           });
