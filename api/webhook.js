@@ -10,16 +10,6 @@ const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 
 const THAI_TAI_PHOTO = process.env.THAI_TAI_PHOTO_ID || "";
 
-const PHASE1_CAPTION = `*Dostoiévski olha para você com um ar de superioridade.* 🦤
-
-Ah. Finalmente chegou.
-
-Enigmas. À altura da minha inteligência — e talvez da sua.
-
-Há um lugar em São Paulo onde tudo começou. Aromas de um país distante. Uma reação alérgica memorável. Um plano que falhou e um que salvou a noite.
-
-Você se lembra do nome desse lugar?`;
-
 // ─── Emojis válidos para reação no Telegram ───────────────────────────────
 const VALID_REACTION_EMOJIS = new Set([
   "👍","👎","❤️","🔥","🥰","👏","😁","🤔","🤯","😱",
@@ -133,6 +123,7 @@ export default async function handler(req, res) {
     if (update.message?.text === "/start") {
       const chatId = update.message.chat.id;
       const userId = update.message.from.id;
+      const userName = update.message.from.first_name || "humana";
 
       const state = await getState(userId);
       if (state.phase === 5) {
@@ -142,23 +133,35 @@ export default async function handler(req, res) {
 
       await resetState(userId);
 
-      await setState(userId, {
+      const startState = {
         phase: 1,
         substate: "puzzle",
-        chatId: chatId,
-        history: [{ role: "assistant", content: PHASE1_CAPTION }],
-      });
+        chatId,
+        history: [],
+        summary: "",
+      };
+      await setState(userId, startState);
 
+      // Foto define o cenário (sem texto fixo — a abertura vem do Dodo)
       if (THAI_TAI_PHOTO) {
-        await bot.sendPhoto(chatId, THAI_TAI_PHOTO, {
-          caption: PHASE1_CAPTION,
-          parse_mode: "Markdown",
-        });
-      } else {
-        await bot.sendMessage(chatId, PHASE1_CAPTION, {
-          parse_mode: "Markdown",
-        });
+        await bot.sendPhoto(chatId, THAI_TAI_PHOTO, { caption: "🦤" }).catch(() => {});
       }
+
+      // Abertura dinâmica: o LLM escreve as boas-vindas em bolhas, usando o
+      // contexto da Fase 1 (system prompt) para provocar sobre o primeiro encontro.
+      const openingSignal = `[SINAL DE ABERTURA: ${userName} acabou de invocar você com /start. ` +
+        `Dê as boas-vindas com seu sarcasmo de Dodo erudito. ` +
+        `Anuncie que os enigmas começaram. ` +
+        `Provoque-a sobre o primeiro encontro de vocês em São Paulo (sem entregar nomes). ` +
+        `Termine perguntando se ela se lembra do nome do lugar onde tudo começou.]`;
+
+      const openingResponse = await burstToTelegram(chatId, openingSignal, null, startState);
+
+      // Persiste a abertura gerada para manter continuidade nos próximos turnos.
+      await setState(userId, {
+        ...startState,
+        history: [{ role: "assistant", content: openingResponse }],
+      });
 
       return res.status(200).json({ ok: true });
     }
