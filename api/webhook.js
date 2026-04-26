@@ -88,7 +88,7 @@ async function burstToTelegram(chatId, userMessage, userMsgId, state) {
     if (!text) continue;
 
     await bot.sendChatAction(chatId, "typing");
-    const delay = Math.min(Math.max(text.length * 12, 400), 1200);
+    const delay = Math.min(Math.max(text.length * 6, 200), 600);
     await new Promise((r) => setTimeout(r, delay));
 
     try {
@@ -105,7 +105,7 @@ async function burstToTelegram(chatId, userMessage, userMsgId, state) {
   if (!/[?!\n]$/.test(lastBubble)) {
     const fallbacks = ["Vai responder ou não?", "O silêncio dos primatas é ensurdecedor.", "Perdeu a língua?", "Responda."];
     const extra = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 300));
     const sentExtra = await bot.sendMessage(chatId, extra).catch(() => {});
     if (sentExtra) lastSentMsgId = sentExtra.message_id;
   }
@@ -187,7 +187,7 @@ export default async function handler(req, res) {
       if (THAI_TAI_PHOTO) {
         await new Promise(r => setTimeout(r, 800));
         await bot.sendPhoto(chatId, THAI_TAI_PHOTO, { caption: "🦤" }).catch(() => {});
-        await new Promise(r => setTimeout(r, 600));
+        await new Promise(r => setTimeout(r, 300));
       }
 
       // Sinal do primeiro enigma: a Fase 1 começa aqui, não no opener.
@@ -246,7 +246,7 @@ export default async function handler(req, res) {
 
         // Se a próxima fase tem poll, dispara imediatamente
         if (nextPhase.advanceType === "poll") {
-          await new Promise(r => setTimeout(r, 2000));
+          await new Promise(r => setTimeout(r, 600));
           await bot.sendPoll(state.chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
             type: "quiz",
             correct_option_id: nextPhase.correctOptionId,
@@ -255,7 +255,7 @@ export default async function handler(req, res) {
           });
         } else if (nextPhase.puzzleSignal) {
           // Fase com enigma gerado pelo LLM via SINAL (Fase 2 cento, Fase 4 cifra)
-          await new Promise(r => setTimeout(r, 2000));
+          await new Promise(r => setTimeout(r, 600));
           await burstToTelegram(state.chatId, nextPhase.puzzleSignal, null, newState);
         }
       }
@@ -304,9 +304,9 @@ export default async function handler(req, res) {
             // Bridge LLM antes da poll pra costurar a transição (cento → cantor).
             if (nextPhase.transitionSignal) {
               await burstToTelegram(chatId, nextPhase.transitionSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
-              await new Promise(r => setTimeout(r, 800));
+              await new Promise(r => setTimeout(r, 500));
             } else {
-              await new Promise(r => setTimeout(r, 1500));
+              await new Promise(r => setTimeout(r, 600));
             }
             await bot.sendPoll(chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
               type: "quiz",
@@ -315,15 +315,15 @@ export default async function handler(req, res) {
               explanation: "Dostoiévski sabia. Você deveria também. 🦤",
             });
           } else if (nextPhase.puzzleSignal) {
-            await new Promise(r => setTimeout(r, 1500));
+            await new Promise(r => setTimeout(r, 600));
             await burstToTelegram(chatId, nextPhase.puzzleSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
           } else if (nextPhase.advanceType === "webapp") {
             // Fechamento simbólico LLM antes do botão do Terminal de Reparações.
             if (nextPhase.transitionSignal) {
               await burstToTelegram(chatId, nextPhase.transitionSignal, null, { ...state, phase: newPhase, substate: "chat" });
-              await new Promise(r => setTimeout(r, 800));
+              await new Promise(r => setTimeout(r, 500));
             } else {
-              await new Promise(r => setTimeout(r, 1500));
+              await new Promise(r => setTimeout(r, 600));
             }
             await bot.sendMessage(chatId, "🦤 The Terminal of Repairs is open. Step in.", {
               reply_markup: {
@@ -409,7 +409,7 @@ export default async function handler(req, res) {
 
         // Próxima fase tem um enigma gerado pelo LLM via SINAL (Fase 2 cento, Fase 4 cifra)
         if (nextPhase.puzzleSignal) {
-          await new Promise(r => setTimeout(r, 1500));
+          await new Promise(r => setTimeout(r, 600));
           await burstToTelegram(chatId, nextPhase.puzzleSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
           await setState(userId, {
             phase: newPhase,
@@ -422,7 +422,7 @@ export default async function handler(req, res) {
         }
 
         if (nextPhase.advanceType === "poll") {
-          await new Promise(r => setTimeout(r, 1200));
+          await new Promise(r => setTimeout(r, 600));
           await bot.sendPoll(chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
             type: "quiz",
             correct_option_id: nextPhase.correctOptionId,
@@ -441,7 +441,7 @@ export default async function handler(req, res) {
 
         newSubstate = "puzzle";
 
-        await new Promise((r) => setTimeout(r, 1200));
+        await new Promise((r) => setTimeout(r, 600));
 
         const buttonUrl = newPhase === 5 ? `${BASE_URL}/revelation/` : `${BASE_URL}/app/?phase=${newPhase}`;
         const buttonText = newPhase === 5 ? "🌈 Open the Terminal of Repairs" : `✨ Próximo Enigma`;
