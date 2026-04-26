@@ -1,4 +1,5 @@
 import TelegramBot from "node-telegram-bot-api";
+import { waitUntil } from "@vercel/functions";
 import { getState, setState, resetState, claimUpdate } from "../lib/state.js";
 import { generateResponse, shouldAdvancePhase, summarizeHistory, validateAnswer } from "../lib/gemini.js";
 import { getPhase } from "../lib/phases.js";
@@ -103,7 +104,7 @@ async function burstToTelegram(chatId, userMessage, userMsgId, state) {
 }
 
 // ─── Handler principal ────────────────────────────────────────────────────
-export default async function handler(req, res, context) {
+export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(200).json({ ok: true, message: "Dostoiévski aguarda. 🦤" });
   }
@@ -215,7 +216,7 @@ export default async function handler(req, res, context) {
       // ── Responde 200 imediatamente; background mantido vivo pelo waitUntil ──
       res.status(200).json({ ok: true });
 
-      context.waitUntil((async () => {
+      waitUntil((async () => {
         try {
           if (!state.chatId) return;
 
@@ -296,7 +297,7 @@ export default async function handler(req, res, context) {
           // ── Responde 200 imediatamente; background mantido vivo pelo waitUntil ──
           res.status(200).json({ ok: true });
 
-          context.waitUntil((async () => {
+          waitUntil((async () => {
             try {
               if (nextPhase.advanceType === "poll") {
                 if (nextPhase.transitionSignal) {
