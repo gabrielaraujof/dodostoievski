@@ -159,27 +159,43 @@ export default async function handler(req, res) {
       };
       await setState(userId, startState);
 
-      // Foto define o cenário (sem texto fixo — a abertura vem do Dodo)
-      if (THAI_TAI_PHOTO) {
-        await bot.sendPhoto(chatId, THAI_TAI_PHOTO, { caption: "🦤" }).catch(() => {});
-      }
-
-      // Abertura dinâmica: o LLM escreve as boas-vindas em bolhas, usando o
-      // contexto da Fase 1 (system prompt) para provocar sobre o primeiro encontro.
+      // Abertura dinâmica em duas partes:
+      // 1) Boas-vindas + apresentação da jornada (sem mencionar o primeiro encontro)
+      // 2) Foto do Thai-Tai como cenário do primeiro enigma
+      // 3) Provocação do primeiro enigma (Fase 1)
       const openingSignal = `[SINAL DE ABERTURA: ${userName} acabou de invocar você com /start. ` +
-        `Em 4-6 bolhas curtas, dê as boas-vindas com seu sarcasmo de Dodo erudito. ` +
+        `Em 3-4 bolhas curtas, dê as boas-vindas com seu sarcasmo de Dodo erudito. ` +
         `ESTABELEÇA o formato da jornada com clareza: ela vai atravessar uma sequência de enigmas encadeados — cada acerto abre o próximo, e ao final do percurso há algo material esperando por ela. NÃO revele quantos enigmas existem, nem do que tratam. NÃO use as palavras "presente" nem "aniversário" — apenas insinue que algo a aguarda no fim. ` +
-        `Em seguida, provoque-a sobre o primeiro encontro de vocês em São Paulo (sem entregar nomes próprios). ` +
-        `Termine convidando-a a relembrar aquela noite — qualquer detalhe basta para começar: o restaurante tailandês, o prato ardido, ou a confeitaria famosa que estava fechada. ` +
+        `NÃO mencione ainda nada sobre o primeiro encontro de vocês em São Paulo — esse é o próximo passo, não este. Termine apenas anunciando, com seu tom ácido, que o primeiro enigma está prestes a começar. ` +
         `NÃO afirme que ela acertou nada — ela ainda nem respondeu. ` +
         `Esta resposta é EXCEÇÃO ao cap de 40 palavras: priorize estabelecer a jornada com clareza sobre brevidade aqui.]`;
 
       const openingResponse = await burstToTelegram(chatId, openingSignal, null, startState);
 
-      // Persiste a abertura gerada para manter continuidade nos próximos turnos.
-      await setState(userId, {
+      // Foto define o cenário do primeiro enigma — entra DEPOIS das boas-vindas.
+      if (THAI_TAI_PHOTO) {
+        await new Promise(r => setTimeout(r, 800));
+        await bot.sendPhoto(chatId, THAI_TAI_PHOTO, { caption: "🦤" }).catch(() => {});
+        await new Promise(r => setTimeout(r, 600));
+      }
+
+      // Sinal do primeiro enigma: a Fase 1 começa aqui, não no opener.
+      const phase1Signal = `[SINAL DE ENIGMA FASE 1: É hora de provocar a usuária sobre o primeiro encontro de vocês em São Paulo. ` +
+        `Em 2-3 bolhas curtas, em primeira pessoa, no seu tom ácido habitual, convide-a a relembrar qualquer detalhe daquela noite — o restaurante tailandês, o prato ardido, ou a confeitaria famosa que estava fechada. Qualquer um dos três entra como pista de partida. ` +
+        `NÃO entregue nomes próprios. NÃO afirme que ela acertou nada — ela ainda nem respondeu.]`;
+
+      const phase1Response = await burstToTelegram(chatId, phase1Signal, null, {
         ...startState,
         history: [{ role: "assistant", content: openingResponse }],
+      });
+
+      // Persiste as duas falas para manter continuidade nos próximos turnos.
+      await setState(userId, {
+        ...startState,
+        history: [
+          { role: "assistant", content: openingResponse },
+          { role: "assistant", content: phase1Response },
+        ],
       });
 
       return res.status(200).json({ ok: true });
