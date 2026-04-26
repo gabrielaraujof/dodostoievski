@@ -170,7 +170,7 @@ export default async function handler(req, res) {
         `Dê as boas-vindas com seu sarcasmo de Dodo erudito. ` +
         `Anuncie que os enigmas começaram. ` +
         `Provoque-a sobre o primeiro encontro de vocês em São Paulo (sem entregar nomes). ` +
-        `Termine perguntando se ela se lembra do nome do lugar onde tudo começou.]`;
+        `Termine convidando-a a relembrar aquela noite — qualquer detalhe basta para começar: o restaurante tailandês, o prato ardido, ou a confeitaria famosa que estava fechada. NÃO afirme que ela acertou nada — ela ainda nem respondeu.]`;
 
       const openingResponse = await burstToTelegram(chatId, openingSignal, null, startState);
 
