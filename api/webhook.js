@@ -301,7 +301,13 @@ export default async function handler(req, res) {
           ].slice(-12);
 
           if (nextPhase.advanceType === "poll") {
-            await new Promise(r => setTimeout(r, 1500));
+            // Bridge LLM antes da poll pra costurar a transição (cento → cantor).
+            if (nextPhase.transitionSignal) {
+              await burstToTelegram(chatId, nextPhase.transitionSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
+              await new Promise(r => setTimeout(r, 800));
+            } else {
+              await new Promise(r => setTimeout(r, 1500));
+            }
             await bot.sendPoll(chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
               type: "quiz",
               correct_option_id: nextPhase.correctOptionId,
@@ -312,9 +318,14 @@ export default async function handler(req, res) {
             await new Promise(r => setTimeout(r, 1500));
             await burstToTelegram(chatId, nextPhase.puzzleSignal, null, { ...state, phase: newPhase, substate: "puzzle" });
           } else if (nextPhase.advanceType === "webapp") {
-            // Fase final: botão do Terminal de Reparações
-            await new Promise(r => setTimeout(r, 1500));
-            await bot.sendMessage(chatId, "🦤 Three codes secured. One terminal awaits.", {
+            // Fechamento simbólico LLM antes do botão do Terminal de Reparações.
+            if (nextPhase.transitionSignal) {
+              await burstToTelegram(chatId, nextPhase.transitionSignal, null, { ...state, phase: newPhase, substate: "chat" });
+              await new Promise(r => setTimeout(r, 800));
+            } else {
+              await new Promise(r => setTimeout(r, 1500));
+            }
+            await bot.sendMessage(chatId, "🦤 The Terminal of Repairs is open. Step in.", {
               reply_markup: {
                 inline_keyboard: [[{ text: "🌈 Open the Terminal of Repairs", web_app: { url: `${BASE_URL}/revelation/` } }]],
               },
@@ -434,7 +445,7 @@ export default async function handler(req, res) {
 
         const buttonUrl = newPhase === 5 ? `${BASE_URL}/revelation/` : `${BASE_URL}/app/?phase=${newPhase}`;
         const buttonText = newPhase === 5 ? "🌈 Open the Terminal of Repairs" : `✨ Próximo Enigma`;
-        const buttonCaption = newPhase === 5 ? "🦤 Three codes secured. One terminal awaits." : "🦤 Próximo enigma destrancado.";
+        const buttonCaption = newPhase === 5 ? "🦤 The Terminal of Repairs is open. Step in." : "🦤 Próximo enigma destrancado.";
         await bot.sendMessage(chatId, buttonCaption, {
           reply_markup: { inline_keyboard: [[{ text: buttonText, web_app: { url: buttonUrl } }]] },
         });
