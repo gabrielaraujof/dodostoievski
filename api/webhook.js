@@ -1,7 +1,7 @@
 import TelegramBot from "node-telegram-bot-api";
 import { waitUntil } from "@vercel/functions";
 import { getState, setState, resetState, claimUpdate, claimPhaseDispatch } from "../lib/state.js";
-import { processUserIntent, checkFastPath, summarizeHistory } from "../lib/gemini.js";
+import { processUserIntent, checkFastPath, summarizeHistory, generateResponse } from "../lib/gemini.js";
 import { getPhase } from "../lib/phases.js";
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
@@ -62,16 +62,16 @@ const PHASE4_CIPHER_BUBBLE =
 // ─── Despacho de enigma com cifra determinística (Fase 4) ─────────────────
 async function dispatchPuzzleSignal(chatId, nextPhase, llmStateContext) {
   if (nextPhase.puzzleSignalPre && nextPhase.puzzleSignalPost) {
-    const preResponse = await processUserIntent(nextPhase.puzzleSignalPre, llmStateContext);
-    await burstToTelegram(chatId, preResponse.response, null);
+    const preResponse = await generateResponse(nextPhase.puzzleSignalPre, llmStateContext);
+    await burstToTelegram(chatId, preResponse, null);
     await new Promise(r => setTimeout(r, 400));
     await bot.sendMessage(chatId, PHASE4_CIPHER_BUBBLE, { parse_mode: "Markdown" });
     await new Promise(r => setTimeout(r, 400));
-    const postResponse = await processUserIntent(nextPhase.puzzleSignalPost, llmStateContext);
-    await burstToTelegram(chatId, postResponse.response, null);
+    const postResponse = await generateResponse(nextPhase.puzzleSignalPost, llmStateContext);
+    await burstToTelegram(chatId, postResponse, null);
   } else if (nextPhase.puzzleSignal) {
-    const res = await processUserIntent(nextPhase.puzzleSignal, llmStateContext);
-    await burstToTelegram(chatId, res.response, null);
+    const res = await generateResponse(nextPhase.puzzleSignal, llmStateContext);
+    await burstToTelegram(chatId, res, null);
   }
 }
 
@@ -170,8 +170,8 @@ export default async function handler(req, res) {
           `NÃO afirme que ela acertou nada — ela ainda nem respondeu. ` +
           `Esta resposta é EXCEÇÃO ao cap de 40 palavras: priorize estabelecer a jornada com clareza sobre brevidade aqui.]`;
 
-        const openingRes = await processUserIntent(openingSignal, startState);
-        const openingText = await burstToTelegram(chatId, openingRes.response, null);
+        const openingText = await generateResponse(openingSignal, startState);
+        await burstToTelegram(chatId, openingText, null);
 
         if (THAI_TAI_PHOTO) {
           await new Promise(r => setTimeout(r, 800));
@@ -184,8 +184,8 @@ export default async function handler(req, res) {
           `NÃO entregue nomes próprios. NÃO afirme que ela acertou nada — ela ainda nem respondeu.]`;
 
         const currentHistory = [{ role: "assistant", content: openingText }];
-        const phase1Res = await processUserIntent(phase1Signal, { ...startState, history: currentHistory });
-        const phase1Text = await burstToTelegram(chatId, phase1Res.response, null);
+        const phase1Text = await generateResponse(phase1Signal, { ...startState, history: currentHistory });
+        await burstToTelegram(chatId, phase1Text, null);
 
         await setState(userId, {
           ...startState,
@@ -230,8 +230,8 @@ export default async function handler(req, res) {
           if (!state.chatId) return;
 
           const pollSignal = "[SINAL: A usuária acertou o quiz musical — identificou Александр Серов como o intérprete de 'Я люблю тебя до слёз'. Reconheça em 1-2 bolhas curtas, no seu tom ácido, que ela conhece a voz russa certa. Refira-se ao cantor APENAS pela grafia em cirílico (Серов). NÃO comente sobre a palavra 'lágrimas' (já tratado na fase anterior). NÃO recapitule a Fase 1 (Tom Yum, padaria, Augusta). Apenas costure rapidamente para o próximo enigma técnico que vem a seguir.]";
-          const pollRes = await processUserIntent(pollSignal, newState);
-          await burstToTelegram(state.chatId, pollRes.response, null);
+          const pollText = await generateResponse(pollSignal, newState);
+          await burstToTelegram(state.chatId, pollText, null);
 
           if (nextPhase.advanceType === "poll") {
             await new Promise(r => setTimeout(r, 600));
@@ -285,7 +285,7 @@ export default async function handler(req, res) {
 
         res.status(200).json({ ok: true, fastPath: true });
 
-        waitUntil(processAdvancement(chatId, userId, state, advancedState, nextPhase));
+        waitUntil(processAdvancement(chatId, userId, state, advancedState, nextPhase)());
         return;
       }
 
@@ -351,8 +351,8 @@ function processAdvancement(chatId, userId, oldState, newState, nextPhase) {
     try {
       if (nextPhase.advanceType === "poll") {
         if (nextPhase.transitionSignal) {
-          const res = await processUserIntent(nextPhase.transitionSignal, newState);
-          await burstToTelegram(chatId, res.response, null);
+          const resText = await generateResponse(nextPhase.transitionSignal, newState);
+          await burstToTelegram(chatId, resText, null);
           await new Promise(r => setTimeout(r, 500));
         }
         await bot.sendPoll(chatId, nextPhase.pollQuestion, nextPhase.pollOptions, {
@@ -369,8 +369,8 @@ function processAdvancement(chatId, userId, oldState, newState, nextPhase) {
       } else if (nextPhase.advanceType === "webapp") {
         if (await claimPhaseDispatch(userId, newState.phase)) {
           if (nextPhase.transitionSignal) {
-            const res = await processUserIntent(nextPhase.transitionSignal, newState);
-            await burstToTelegram(chatId, res.response, null);
+            const resText = await generateResponse(nextPhase.transitionSignal, newState);
+            await burstToTelegram(chatId, resText, null);
             await new Promise(r => setTimeout(r, 400));
           }
           
