@@ -232,7 +232,7 @@ export default async function handler(req, res) {
 
           await burstToTelegram(
             state.chatId,
-            "[SINAL: A usuária acertou o quiz musical — identificou Alexander Serov como o intérprete de 'Я люблю тебя до слёз'. Reconheça em 1-2 bolhas curtas, no seu tom ácido, que ela conhece a voz russa certa. NÃO comente sobre a palavra 'lágrimas' (já tratado na fase anterior). NÃO recapitule a Fase 1 (Tom Yum, padaria, Augusta). Apenas costure rapidamente para o próximo enigma técnico que vem a seguir.]",
+            "[SINAL: A usuária acertou o quiz musical — identificou Александр Серов como o intérprete de 'Я люблю тебя до слёз'. Reconheça em 1-2 bolhas curtas, no seu tom ácido, que ela conhece a voz russa certa. Refira-se ao cantor APENAS pela grafia em cirílico (Серов). NÃO comente sobre a palavra 'lágrimas' (já tratado na fase anterior). NÃO recapitule a Fase 1 (Tom Yum, padaria, Augusta). Apenas costure rapidamente para o próximo enigma técnico que vem a seguir.]",
             null,
             newState
           );
