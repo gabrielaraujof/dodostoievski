@@ -329,19 +329,39 @@ export default async function handler(req, res) {
                   await dispatchPuzzleSignal(chatId, nextPhase, { ...state, phase: newPhase, substate: "puzzle" });
                 }
               } else if (nextPhase.advanceType === "webapp") {
-                if (nextPhase.transitionSignal) {
-                  await burstToTelegram(chatId, nextPhase.transitionSignal, null, { ...state, phase: newPhase, substate: "chat" });
-                  await new Promise(r => setTimeout(r, 500));
-                } else {
-                  await new Promise(r => setTimeout(r, 600));
+                // Lock atômico (defesa contra reentries de retry do Telegram).
+                if (await claimPhaseDispatch(userId, newPhase)) {
+                  // Narrativa do LLM em try/catch — se a chamada demorar ou
+                  // falhar, o conteúdo crítico abaixo (códigos + botão do
+                  // Terminal) ainda chega. Narrativa é decorativa; codes +
+                  // botão são funcionalmente obrigatórios.
+                  if (nextPhase.transitionSignal) {
+                    try {
+                      await burstToTelegram(chatId, nextPhase.transitionSignal, null, { ...state, phase: newPhase, substate: "chat" });
+                    } catch (e) {
+                      console.error("[phase5] transitionSignal failed (non-fatal):", e);
+                    }
+                    await new Promise(r => setTimeout(r, 400));
+                  } else {
+                    await new Promise(r => setTimeout(r, 500));
+                  }
+
+                  // Bolha ÚNICA: códigos + chamada do Terminal + botão WebApp.
+                  // Bundling garante atomicidade — Telegram aceita texto +
+                  // reply_markup juntos numa só chamada, então ou tudo chega
+                  // ou nada chega (sem janela entre 2 sendMessage onde o
+                  // timeout possa cair).
+                  await bot.sendMessage(
+                    chatId,
+                    "`TOMYUM`\n`SLEZY`\n`KOT`\n\n🦤 The Terminal of Repairs is open. Step in.",
+                    {
+                      parse_mode: "Markdown",
+                      reply_markup: {
+                        inline_keyboard: [[{ text: "🌈 Open the Terminal of Repairs", web_app: { url: `${BASE_URL}/revelation/` } }]],
+                      },
+                    }
+                  );
                 }
-                await bot.sendMessage(chatId, "`TOMYUM`\n`SLEZY`\n`KOT`", { parse_mode: "Markdown" });
-                await new Promise(r => setTimeout(r, 500));
-                await bot.sendMessage(chatId, "🦤 The Terminal of Repairs is open. Step in.", {
-                  reply_markup: {
-                    inline_keyboard: [[{ text: "🌈 Open the Terminal of Repairs", web_app: { url: `${BASE_URL}/revelation/` } }]],
-                  },
-                });
               }
             } catch (e) {
               console.error("[message] waitUntil error:", e);
